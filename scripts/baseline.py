@@ -15,7 +15,12 @@ costs nothing, needs no API key, and prints a per-arm cost projection. --cap
 stops admitting new episodes once spend plus the next reservation would pass it.
 
 Claude models read ANTHROPIC_API_KEY, Sarvam models SARVAM_API_KEY and OpenAI
-models (gpt-*) OPENAI_API_KEY.
+models (gpt-*) OPENAI_API_KEY. Models prefixed otari: go through the Otari gateway
+on OTARI_API_KEY (OTARI_BASE_URL overrides https://api.otari.ai/api/v1); the rest of
+the name is an Otari catalog id or routing policy, and cost is what Otari bills:
+
+    python scripts/baseline.py --model otari:deepseek/deepseek-v4-pro-0813 --per-difficulty 3 --out results/otari-deepseek.jsonl
+
 All can be set in a local .env file.
 """
 
@@ -161,6 +166,8 @@ class Turn:
     fatal: bool = False  # stop the episode (API error, refusal, truncation)
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
+    gateway_cost_usd: float | None = None  # what Otari billed for this turn, when it says
+    gateway: dict | None = None  # Otari response headers worth keeping
 
 
 def sarvam_usage(u) -> dict:
@@ -339,6 +346,92 @@ class OpenAIAgent:
         messages.append({"role": "user", "content": text})
 
 
+OTARI_BASE_URL = "https://api.otari.ai/api/v1"
+OTARI_HEADERS = ("Otari-Provider", "Otari-Model", "Otari-Fallback", "Otari-Attempt-Count",
+                 "Otari-Guardrails", "Otari-Request-ID")
+
+
+def otari_model(model: str) -> str:
+    """'otari:deepseek/deepseek-v4-pro-0813' -> the name Otari takes (catalog id or routing policy)."""
+    return model.removeprefix("otari:")
+
+
+class OtariAgent:
+    """Chat Completions through the Otari gateway. Function tools run here, in the env;
+    Otari's own tools (code execution) run in the gateway inside the same request.
+    Cost is what Otari reports in usage.cost_usd, not a local price table."""
+
+    max_tokens = 8192
+
+    def __init__(self, model: str, tools: list = TOOLS, user: str | None = None,
+                 guardrails: list[str] | None = None, code_exec: bool = False):
+        self.client = openai.OpenAI(base_url=os.environ.get("OTARI_BASE_URL", OTARI_BASE_URL),
+                                    api_key=os.environ.get("OTARI_API_KEY"))
+        self.model = otari_model(model)
+        self.tools = [
+            {"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["input_schema"]}}
+            for t in tools
+        ] + ([{"type": "otari_code_execution"}] if code_exec else [])
+        self.extra = {}
+        if user:
+            self.extra["user"] = user  # needs a service key: one end user, one budget, per arm
+        if guardrails:
+            self.extra["guardrails"] = [{"profile": p, "mode": "block", "on_unavailable": "block"} for p in guardrails]
+
+    def start(self, prompt: str) -> list:
+        return [{"role": "user", "content": prompt}]
+
+    def turn(self, messages: list) -> Turn:
+        try:
+            raw = self.client.chat.completions.with_raw_response.create(
+                model=self.model,
+                messages=messages,
+                tools=self.tools,
+                tool_choice="auto",
+                max_tokens=self.max_tokens,
+                extra_body=self.extra or None,
+            )
+        except openai.APIStatusError as e:
+            code = e.response.headers.get("Otari-Error-Code")
+            # budget_exceeded and guardrail_violation are Otari doing its job, not a crash
+            return Turn([], code or f"api_error_{e.status_code}", 0, 0, fatal=True,
+                        gateway={"error_code": code, "status": e.status_code} if code else None)
+        r = raw.parse()
+        gateway = {h: raw.headers[h] for h in OTARI_HEADERS if h in raw.headers}
+        usage = sarvam_usage(r.usage)  # same OpenAI Chat Completions usage shape
+        cost = getattr(r.usage, "cost_usd", None) if r.usage else None
+        meta = dict(gateway_cost_usd=float(cost) if cost is not None else None, gateway=gateway)
+        if not r.choices:
+            return Turn([], "no_choices", fatal=True, **usage, **meta)
+        choice = r.choices[0]
+        if choice.finish_reason == "length":
+            return Turn([], "length", fatal=True, **usage, **meta)
+        tool_calls = [tc for tc in (choice.message.tool_calls or []) if getattr(tc, "function", None)]
+        messages.append({
+            "role": "assistant",
+            "content": choice.message.content or "",
+            **({"tool_calls": [
+                {"id": tc.id, "type": "function", "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
+                for tc in tool_calls
+            ]} if tool_calls else {}),
+        })
+        calls = []
+        for tc in tool_calls:
+            try:
+                args = json.loads(tc.function.arguments)
+            except json.JSONDecodeError:
+                args = None
+            calls.append(ToolCall(tc.id, tc.function.name, args))
+        return Turn(calls, choice.finish_reason, **usage, **meta)
+
+    def add_results(self, messages: list, results: list[tuple[ToolCall, dict]]) -> None:
+        for call, out in results:
+            messages.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(out)})
+
+    def nudge(self, messages: list, text: str = NUDGE) -> None:
+        messages.append({"role": "user", "content": text})
+
+
 class StubAgent:
     """Zero-cost stand-in for the dry run. Reads the task the way a careful agent
     would (every page, every invoice, ten per turn, then the ledger) and submits
@@ -413,7 +506,9 @@ class Budget:
             self.spent += actual_usd
 
 
-def make_agent(model: str, effort: str, tools: list = TOOLS):
+def make_agent(model: str, effort: str, tools: list = TOOLS, **otari):
+    if model.startswith("otari:"):
+        return OtariAgent(model, tools, **otari)
     if model.startswith("sarvam"):
         return SarvamAgent(model, tools)
     if model.startswith("gpt"):
@@ -434,6 +529,7 @@ def run_episode(agent, model: str, effort: str, task, max_turns: int) -> dict:
     messages = agent.start(session.instructions())
     input_tokens = output_tokens = cache_read = cache_write = turns = tool_calls = 0
     stop = None
+    gateway_cost, gateway_turns = 0.0, []
 
     while not session.done and turns < max_turns:
         turns += 1
@@ -443,6 +539,10 @@ def run_episode(agent, model: str, effort: str, task, max_turns: int) -> dict:
         cache_read += t.cache_read_tokens
         cache_write += t.cache_write_tokens
         stop = t.stop
+        if t.gateway_cost_usd is not None:
+            gateway_cost += t.gateway_cost_usd
+        if t.gateway:
+            gateway_turns.append(t.gateway)
         if t.fatal:
             break
         if not t.calls:
@@ -456,13 +556,17 @@ def run_episode(agent, model: str, effort: str, task, max_turns: int) -> dict:
             + cache_read * p.cache_read + output_tokens * p.output) / 1e6
     # What the same episode would have cost with every input token billed at full price.
     uncached_cost = ((input_tokens + cache_write + cache_read) * p.input + output_tokens * p.output) / 1e6
+    via_otari = model.startswith("otari:")
+    if via_otari:
+        # Otari prices the model it actually routed to; fallbacks included.
+        cost = uncached_cost = gateway_cost
     result = session.result or {"reward": 0.0, "passed": False, "fields": {}}
-    return {
+    row = {
         "task_id": task.task_id,
         "difficulty": task.difficulty,
         "n_invoices": len(task.invoices),
         "model": model,
-        "effort": None if model.startswith("sarvam") else effort,
+        "effort": None if model.startswith(("sarvam", "otari:")) else effort,
         "reward": result["reward"],
         "passed": result["passed"],
         "submitted": session.done,
@@ -477,6 +581,21 @@ def run_episode(agent, model: str, effort: str, task, max_turns: int) -> dict:
         "cost_usd": round(cost, 4),
         "uncached_cost_usd": round(uncached_cost, 4),
     }
+    if via_otari:
+        row["otari"] = otari_summary(gateway_turns)
+    return row
+
+
+def otari_summary(turns: list[dict]) -> dict:
+    """Which models actually answered, how often a fallback served, what guardrails said."""
+    served = sorted({t["Otari-Model"] for t in turns if "Otari-Model" in t})
+    return {
+        "served_models": served,
+        "fallback_turns": sum(t.get("Otari-Fallback") == "true" for t in turns),
+        "guardrails": [t["Otari-Guardrails"] for t in turns if "Otari-Guardrails" in t],
+        "error_code": next((t["error_code"] for t in turns if t.get("error_code")), None),
+        "request_ids": [t["Otari-Request-ID"] for t in turns if "Otari-Request-ID" in t],
+    }
 
 
 def load_dotenv(path: Path = Path(".env")) -> None:
@@ -490,6 +609,8 @@ def load_dotenv(path: Path = Path(".env")) -> None:
 
 
 def agent_class(model: str):
+    if model.startswith("otari:"):
+        return OtariAgent
     if model.startswith("sarvam"):
         return SarvamAgent
     if model.startswith("gpt"):
@@ -543,7 +664,7 @@ def dry_run(args, tasks: list) -> None:
     ok = True
     print(f"CHECK: retry-prompt  {NUDGE!r}")
     for model in args.models:
-        price_ok = model in PRICES
+        price_ok = model in PRICES or model.startswith("otari:")
         budget = agent_class(model).max_tokens
         rows = stub_rows(model, args.effort, tasks, args.max_turns, args.est_output_tokens)
         costs = [r["cost_usd"] for r in rows]
@@ -553,7 +674,10 @@ def dry_run(args, tasks: list) -> None:
         fits = args.cap is None or max(costs) <= args.cap
         ok &= price_ok and budget >= REASONING_FLOOR and pipeline_ok and fits
         print(f"ARM: {model}")
-        print(f"  CHECK: price-table           {'ok' if price_ok else 'MISSING (add a PRICES row)'}")
+        if model.startswith("otari:"):
+            print("  CHECK: price-table           n/a (Otari bills it; set a budget on the key: the local cap cannot see this spend)")
+        else:
+            print(f"  CHECK: price-table           {'ok' if price_ok else 'MISSING (add a PRICES row)'}")
         print(f"  CHECK: output-budget         {'ok' if budget >= REASONING_FLOOR else 'LOW'} ({budget} >= {REASONING_FLOOR})")
         print(f"  CHECK: pipeline              {'ok' if pipeline_ok else 'FAIL'} ({len(rows)} stub episodes submitted, all-zero return scored 0)")
         if args.cap is not None:
@@ -586,6 +710,9 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=Path("results/baseline.jsonl"))
     parser.add_argument("--dry-run", action="store_true", help="stub agent, no API calls, prints a cost projection")
     parser.add_argument("--cap", type=float, help="USD spend cap for this run")
+    parser.add_argument("--otari-user", help="end-user id sent with every request (service key: per-arm budget)")
+    parser.add_argument("--otari-guardrail", action="append", help="guardrail profile to run in block mode; repeatable")
+    parser.add_argument("--otari-code-exec", action="store_true", help="offer Otari's sandboxed code execution tool")
     parser.add_argument("--est-output-tokens", type=int, default=1500, help="output tokens per turn assumed by the estimate")
     args = parser.parse_args()
     args.models = args.models or [args.model]
@@ -604,7 +731,9 @@ def main() -> None:
         dry_run(args, tasks)
         return
 
-    agent = make_agent(args.model, args.effort, CYCLE_TOOLS if args.tier == "cycle" else TOOLS)
+    otari = dict(user=args.otari_user, guardrails=args.otari_guardrail, code_exec=args.otari_code_exec) \
+        if args.model.startswith("otari:") else {}
+    agent = make_agent(args.model, args.effort, CYCLE_TOOLS if args.tier == "cycle" else TOOLS, **otari)
     # Each reservation is the stub's worst-case estimate for one item.
     estimate = max(r["cost_usd"] for r in stub_rows(args.model, args.effort, tasks, args.max_turns, args.est_output_tokens))
     budget = Budget(args.cap, estimate)

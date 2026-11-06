@@ -169,3 +169,80 @@ def test_summarize_samples_counts_learnable_tasks(capsys):
     out = capsys.readouterr().out
     assert "pass@1=42%" in out and "pass@4=67%" in out and "1 learnable, 1 never solved, 1 always solved" in out
 
+
+def _otari_client(responses, sent):
+    """Fake Otari: with_raw_response.create returns headers + a parsed chat completion."""
+    from types import SimpleNamespace as NS
+
+    def create(**kwargs):
+        sent.append(kwargs)
+        item = responses.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        headers, completion = item
+        return NS(headers=headers, parse=lambda: completion)
+
+    return NS(chat=NS(completions=NS(with_raw_response=NS(create=create))))
+
+
+def _completion(calls, cost, finish="tool_calls"):
+    from types import SimpleNamespace as NS
+
+    tool_calls = [NS(id=f"c{i}", function=NS(name=n, arguments=a)) for i, (n, a) in enumerate(calls)]
+    usage = NS(prompt_tokens=120, completion_tokens=30, prompt_tokens_details=NS(cached_tokens=20), cost_usd=cost)
+    return NS(choices=[NS(finish_reason=finish, message=NS(content="", tool_calls=tool_calls))], usage=usage)
+
+
+def test_otari_agent_files_a_return_and_bills_what_otari_reports(monkeypatch):
+    import json
+
+    monkeypatch.setenv("OTARI_API_KEY", "test")
+    task = generate_task(3, "easy")
+    agent = baseline.make_agent("otari:deepseek/deepseek-v4-pro-0813", "high",
+                                user="arm-deepseek", guardrails=["prompt-injection"], code_exec=True)
+    assert isinstance(agent, baseline.OtariAgent) and agent.model == "deepseek/deepseek-v4-pro-0813"
+    sent = []
+    first = {"Otari-Model": "deepseek-v4-pro", "Otari-Fallback": "false", "Otari-Request-ID": "r1"}
+    second = {"Otari-Model": "glm-5p3", "Otari-Fallback": "true", "Otari-Request-ID": "r2",
+              "Otari-Guardrails": "prompt-injection=pass"}
+    agent.client = _otari_client([
+        (first, _completion([("list_invoices", '{"kind": "sale", "page": 1}')], 0.0012)),
+        (second, _completion([("submit_return", json.dumps({"gstr3b": solve(task)}))], 0.0030)),
+    ], sent)
+
+    row = baseline.run_episode(agent, "otari:deepseek/deepseek-v4-pro-0813", "high", task, max_turns=5)
+
+    assert row["passed"] and row["effort"] is None
+    assert row["cost_usd"] == 0.0042  # Otari's bill, not the local price table
+    assert row["input_tokens"] == 200 and row["cache_read_tokens"] == 40
+    assert row["otari"]["served_models"] == ["deepseek-v4-pro", "glm-5p3"]
+    assert row["otari"]["fallback_turns"] == 1 and row["otari"]["request_ids"] == ["r1", "r2"]
+    assert row["otari"]["guardrails"] == ["prompt-injection=pass"]
+    extra = sent[0]["extra_body"]
+    assert extra["user"] == "arm-deepseek"
+    assert extra["guardrails"] == [{"profile": "prompt-injection", "mode": "block", "on_unavailable": "block"}]
+    assert {"type": "otari_code_execution"} in sent[0]["tools"]
+    # the tool result went back as a Chat Completions tool message
+    assert sent[1]["messages"][2]["role"] == "tool" and sent[1]["messages"][2]["tool_call_id"] == "c0"
+
+
+def test_otari_budget_refusal_stops_the_episode_cleanly(monkeypatch):
+    import httpx
+    import openai
+
+    monkeypatch.setenv("OTARI_API_KEY", "test")
+    task = generate_task(4, "easy")
+    agent = baseline.make_agent("otari:gst-filer", "high")
+    assert "extra_body" not in agent.extra and agent.extra == {}
+    response = httpx.Response(403, headers={"Otari-Error-Code": "budget_exceeded"},
+                              request=httpx.Request("POST", "https://api.otari.ai/api/v1/chat/completions"))
+    agent.client = _otari_client([openai.PermissionDeniedError("budget", response=response, body=None)], [])
+
+    row = baseline.run_episode(agent, "otari:gst-filer", "high", task, max_turns=5)
+
+    assert row["stop_reason"] == "budget_exceeded" and not row["submitted"]
+    assert row["otari"]["error_code"] == "budget_exceeded" and row["cost_usd"] == 0.0
+
+
+def test_otari_dry_run_needs_no_price_row():
+    assert baseline.agent_class("otari:gst-filer") is baseline.OtariAgent
