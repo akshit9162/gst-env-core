@@ -206,3 +206,39 @@ Each item is a candidate for the expert tier once a CA has validated it.
    in 3.1(d) and 4A(3). The RCM liability/ITC statement on the portal is not modelled.
 7. Table 4A(5) is locked to GSTR-2B (an ITC lock has been indicated but its notification is not confirmed).
 8. No interest, late fee, QRMP or composition filers. One month only; nothing carries forward to the next.
+
+## Running through Otari
+
+Every open-weight model runs through the [Otari](https://github.com/mozilla-ai/otari) gateway:
+prefix the model with `otari:` and put `OTARI_API_KEY` (and `OTARI_BASE_URL` for an EU
+account, `https://eu.api.otari.ai/api/v1`) in `.env`. Cost is what Otari bills, so a
+fallback is priced as the model that actually answered.
+
+```bash
+# one model as the filing agent, as in the baseline
+.venv/bin/python scripts/baseline.py --model otari:deepseek/deepseek-v4-pro-0813 --per-difficulty 3 \
+    --otari-code-exec --out results/otari-deepseek.jsonl
+
+# three models in three roles, a poisoned invoice in half the tasks, a guardrail in front
+.venv/bin/python scripts/pipeline.py --filer otari:gst-filer --reviewer otari:zai/glm-5p3 \
+    --explainer otari:alibaba/qwen-3.5-35b-a3b --difficulties hard --per-difficulty 3 \
+    --inject 0.5 --guardrail prompt-injection --code-exec --web-fetch --users
+
+# Otari runs the whole tool loop against the env served over MCP
+.venv/bin/python scripts/mcp_episode.py --model otari:deepseek/deepseek-v4-pro-0813 \
+    --public-url https://<tunnel> --difficulties easy
+
+.venv/bin/python scripts/leaderboard.py results/*.jsonl --markdown results/LEADERBOARD.md --json docs/leaderboard.json
+```
+
+| Otari feature | Where it does work |
+|---|---|
+| Open-weight models | every arm; the leaderboard ranks them on the same seeded tasks |
+| Several models in distinct roles | `pipeline.py`: one model files, another reviews the draft against the invoices, a third explains the filed return to the owner |
+| Routing and fallbacks | `otari:gst-filer` is a fallback policy; each episode logs `Otari-Model` and `Otari-Fallback` per turn |
+| Budgets | a spend ceiling on the run's key; a refusal ends the episode as `budget_exceeded` instead of crashing |
+| Per-user budgets | `--users` names an end user per role and model (`filer:<model>`), each on its own budget, through a service key |
+| Code execution | `--otari-code-exec`: the filer does the tax arithmetic in Otari's sandbox |
+| Web fetch | `--web-fetch`: the reviewer fetches the CBIC rule text it cites (e.g. Section 17(5) for blocked credit) |
+| Guardrails | `--inject` hides an instruction in an invoice note; rows record whether the filer obeyed it, whether review caught it, or whether the `prompt-injection` guardrail refused the request |
+| MCP | `gst_env.mcp_server` serves the filing tools over streamable HTTP; `mcp_episode.py` sends no tools and lets Otari call them |
