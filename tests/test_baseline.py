@@ -32,7 +32,7 @@ class ScriptedAgent:
     def add_results(self, messages, results):
         messages.extend(out for _, out in results)
 
-    def nudge(self, messages):
+    def nudge(self, messages, text=None):
         messages.append("nudge")
 
 
@@ -135,3 +135,37 @@ def test_usage_splitting_and_pricing_for_openai_and_sarvam():
     gpt = baseline.PRICES["gpt-6-astra"]
     assert (gpt.input, gpt.output, gpt.cache_read, gpt.cache_write) == (10.0, 50.0, 1.0, 12.5)
     assert baseline.PRICES.get("unknown-model", baseline.UNPRICED).input == 0
+
+
+def test_stub_reads_everything_and_costs_only_on_paper():
+    task = generate_task(9, "hard")
+    row = baseline.run_episode(baseline.StubAgent(task, 1000), "claude-opus-5-5", "high", task, max_turns=60)
+    assert row["submitted"] and row["reward"] == 0.0
+    assert row["tool_calls"] >= len(task.invoices) + 3  # lists, every invoice, ledger, submit
+    assert row["cache_read_tokens"] > 0 and row["cost_usd"] > 0
+
+
+def test_budget_refuses_reservations_past_the_cap():
+    budget = baseline.Budget(cap_usd=1.0, estimate_usd=0.4)
+    assert budget.reserve() and budget.reserve()
+    assert not budget.reserve()  # 0.8 reserved + 0.4 > 1.0
+    budget.settle(0.1)
+    assert budget.reserve()  # actual spend came in under the estimate
+    assert baseline.Budget(None, 99).reserve()
+
+
+def test_cycle_episode_and_stub_through_runner():
+    from gst_env.cycle import generate_cycle_task
+    task = generate_cycle_task(7)
+    row = baseline.run_episode(baseline.StubAgent(task, 100), "claude-opus-5-5", "high", task, max_turns=20)
+    assert row["submitted"] and row["reward"] == 0.0 and row["difficulty"] == "cycle"
+    assert row["n_invoices"] == len(task.sales) + len(task.purchases)
+
+
+def test_summarize_samples_counts_learnable_tasks(capsys):
+    rows = [{"difficulty": "hard", "task_id": t, "passed": p}
+            for t, ps in {"a": [0, 0, 0, 0], "b": [1, 0, 0, 0], "c": [1, 1, 1, 1]}.items() for p in ps]
+    baseline.summarize_samples(rows, ["hard"], 4)
+    out = capsys.readouterr().out
+    assert "pass@1=42%" in out and "pass@4=67%" in out and "1 learnable, 1 never solved, 1 always solved" in out
+

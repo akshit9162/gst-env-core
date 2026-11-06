@@ -69,3 +69,23 @@ class FilingSession:
             return {"error": "return already submitted"}
         self.result = grade(self.task, gstr3b)
         return {"status": "submitted"}
+
+    def call(self, name: str, args: dict | None) -> dict:
+        """Dispatch one tool call by name; bad input comes back as {"error": ...}."""
+        if not isinstance(args, dict):
+            return {"error": "arguments were not valid JSON"}
+        try:
+            match name:
+                case "list_invoices":
+                    return self.list_invoices(args["kind"], args.get("page", 1))
+                case "get_invoice":
+                    return self.get_invoice(args["invoice_id"])
+                case "describe_category":
+                    return self.describe_category(args["category"])
+                case "get_credit_ledger":
+                    return self.get_credit_ledger()
+                case "submit_return":
+                    return self.submit_return(args["gstr3b"])
+        except (KeyError, TypeError) as e:
+            return {"error": f"bad arguments: {e}"}
+        return {"error": f"unknown tool {name}"}

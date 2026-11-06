@@ -125,3 +125,42 @@ def test_hard_tasks_always_carry_a_ledger_balance():
 def test_session_exposes_ledger():
     task = generate_task(4, "hard")
     assert FilingSession(task).get_credit_ledger() == {"opening_balance": task.opening_credit}
+
+
+def test_wrong_value_in_a_zero_field_costs_reward():
+    task = generate_task(11, "easy")  # easy tasks have no reverse charge, so rcm_tax is all zero
+    truth = solve(task)
+    assert truth["rcm_tax"] == {"igst": 0, "cgst": 0, "sgst": 0}
+    padded = {**truth, "rcm_tax": {"igst": 0, "cgst": 100, "sgst": 0}}
+    result = grade(task, padded)
+    assert not result["passed"] and result["reward"] < 1.0
+
+
+def test_every_invoice_is_reachable_through_pagination():
+    task = _task(*[sale("36", 10_000, 18, n=i) for i in range(11)])
+    s = FilingSession(task)
+    assert s.list_invoices("sale")["total_pages"] == 2
+    assert len(s.list_invoices("sale", page=2)["invoice_ids"]) == 1
+    for seed in range(30):
+        s = FilingSession(generate_task(seed, "hard"))
+        for kind in ("sale", "purchase"):
+            pages = s.list_invoices(kind)["total_pages"]
+            seen = [i for p in range(1, pages + 1) for i in s.list_invoices(kind, p)["invoice_ids"]]
+            assert seen == [i.invoice_id for i in s.task.invoices if i.kind == kind]
+
+
+def test_each_level_generates_the_cases_it_claims_to_cover():
+    from gst_env.rules import BLOCKED_CATEGORIES, HOME_STATE
+
+    def covers(difficulty):
+        invs = [i for s in range(60) for i in generate_task(s, difficulty).invoices]
+        return {
+            "inter_state": any(i.counterparty_state != HOME_STATE for i in invs),
+            "nil_rated": any(i.kind == "sale" and i.rate == 0 for i in invs),
+            "blocked": any(i.category in BLOCKED_CATEGORIES for i in invs),
+            "reverse_charge": any(i.reverse_charge for i in invs),
+        }
+
+    assert covers("easy") == dict.fromkeys(("inter_state", "nil_rated", "blocked", "reverse_charge"), False)
+    assert covers("medium") == {"inter_state": True, "nil_rated": True, "blocked": False, "reverse_charge": False}
+    assert covers("hard") == dict.fromkeys(("inter_state", "nil_rated", "blocked", "reverse_charge"), True)

@@ -22,7 +22,8 @@ plain-text agents and for training as well as evaluation.
 | GPT (OpenAI) | pending | pending | pending |
 | Sarvam-105B | pending | pending | pending |
 
-Pass rate = share of tasks where every graded field is correct. Reproduce with `scripts/baseline.py`.
+Pass rate = share of tasks where every graded field is correct, reported with a 95% Wilson interval.
+Reproduce with `scripts/baseline.py`; the run plan is preregistered in `evals/prereg-baseline-v1.md`.
 
 ## What an episode looks like
 
@@ -42,6 +43,39 @@ Pass rate = share of tasks where every graded field is correct. Reproduce with `
 
 The ground truth applies ITC set-off in the Rule 88A order and picks the split of IGST credit that
 minimises cash outflow. The test suite checks this against brute-force search.
+
+## Cycle tier: the current filing workflow
+
+`--tier cycle` (or `tier = "cycle"` in the verifiers adapter) is the month as a CA's office works it today,
+on a mock portal:
+
+1. **World:** the client's sales register, purchase register (with remarks) and WhatsApp-style messages.
+2. **GSTR-1:** the agent files invoice-level outward supplies. A correction can arrive *after* filing,
+   and must go in through **GSTR-1A** before GSTR-3B is prepared.
+3. **IMS:** accept, reject or keep pending each supplier-uploaded invoice. No action means deemed
+   accepted when GSTR-2B is generated.
+4. **Asking the client:** some facts (were the goods received? business or personal use?) are only in the
+   client's head. `ask_client` answers them, and the client stops replying a couple of questions past what
+   the books actually leave open.
+5. **GSTR-3B:** tables 3.1 and 4A(5) fill in from GSTR-1/1A and GSTR-2B and are locked. The agent enters
+   3.1(d) reverse charge, 4A(3), 4B(1) blocked and 4B(2) other reversals, and the cash paid per head.
+
+The grader rebuilds what was filed (outward tax from the agent's GSTR-1, net ITC from its IMS actions and
+reversals) and compares it with the correct filing: 14 fields plus a GSTR-1 invoice-level check, cash
+weighted 5x. Skipping one habit, even with the correct cash figure supplied, fails most tasks
+(300 tasks; mean reward / pass rate):
+
+| Habit skipped | Reward / pass |
+|---|---|
+| None (careful CA) | 1.00 / 100% |
+| Reads late messages and amends in GSTR-1A | 0.90 / 45% |
+| Removes the invoice the client says was cancelled | 0.90 / 47% |
+| Rejects or holds bad IMS documents | 0.85 / 5% |
+| Reverses blocked credit in 4B(1) | 0.81 / 12% |
+| Asks the client when the books leave it open | 0.80 / 7% |
+
+`tests/test_cycle.py` checks that careful play scores 1.0 on every seed, doing nothing scores 0, and each
+skipped habit fails.
 
 ## Reward integrity
 
@@ -66,6 +100,11 @@ rule it skips, and fails hard tasks often. Credit pooling still passes 57% of ha
 those tasks the head-wise rule genuinely does not change the answer; the planned expert tier targets
 it directly. `tests/test_reward_audit.py` fails the build if any of this regresses.
 
+The test suite is itself checked: `scripts/vaccinate.py` plants 18 defects one at a time (CGST credit paying
+SGST, ITC paying reverse charge, blocked credit claimed, a loosened tolerance, a hidden last page of invoices
+and others) and the suite must fail on each while passing a clean copy. Latest result: 18/18 caught, no false
+alarm, against 2/18 for a single smoke test ([ledger](evals/qualification/LEDGER.md)).
+
 ## Quick start
 
 ```bash
@@ -73,11 +112,38 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev,baseline]"
 .venv/bin/python -m pytest -q
 .venv/bin/python scripts/export_tasks.py --per-difficulty 50     # data/tasks.jsonl + answers.jsonl
 
-# API keys go in .env: ANTHROPIC_API_KEY, OPENAI_API_KEY and/or SARVAM_API_KEY
-.venv/bin/python scripts/baseline.py --per-difficulty 3 --out results/opus-5-5.jsonl
+# Free: stub agent, no API key, prints per-arm cost projections and pipeline checks
+.venv/bin/python scripts/baseline.py --dry-run --models claude-opus-5-5 gpt-6-astra sarvam-105b --per-difficulty 30 --cap 25
+# Seeded-defect check of the test suite; writes evals/qualification/LEDGER.md (~2 min)
+.venv/bin/python scripts/vaccinate.py
+
+# API keys go in .env: ANTHROPIC_API_KEY, OPENAI_API_KEY and/or SARVAM_API_KEY. --cap is a USD spend cap.
+# Three tasks per level is a smoke run (pass-rate intervals of about +/-37 points); see evals/prereg-baseline-v1.md.
+.venv/bin/python scripts/baseline.py --per-difficulty 3 --cap 5 --out results/opus-5-5.jsonl
 .venv/bin/python scripts/baseline.py --model gpt-6-astra --per-difficulty 3 --out results/gpt-6-astra.jsonl
 .venv/bin/python scripts/baseline.py --model sarvam-105b --per-difficulty 3 --out results/sarvam-105b.jsonl
+
+# Cycle tier, 16 attempts per task: adds pass@1, pass@16 and how many tasks are solved sometimes but not
+# always (the ones RL can learn from; a task never solved in 16 tries teaches nothing)
+.venv/bin/python scripts/baseline.py --tier cycle --per-difficulty 20 --samples 16 --cap 25 --out results/cycle-opus.jsonl
 ```
+
+### verifiers / prime-rl
+
+`gst_env_vf` serves both tiers as a verifiers (v1) taskset with id `gst-env-vf`. It needs Python 3.12.
+
+```bash
+uv venv -p 3.12 .venv-vf && VIRTUAL_ENV=.venv-vf uv pip install -e ".[dev,vf]"
+.venv-vf/bin/python -m pytest -q tests/test_vf.py
+# No model needed: checks every task loads and an untouched task scores 0
+.venv-vf/bin/vf-validate gst-env-vf --only-noop True --runtime.type subprocess --taskset.task.tier cycle --taskset.num-tasks 20
+# Eval with a model (16 rollouts per task gives pass@16)
+.venv-vf/bin/vf-run gst-env-vf -m <model> -n 50 -r 16 --env.taskset.task.tier cycle --env.taskset.seed-offset 1000000
+```
+
+Tool state is the rollout's log of calls, replayed on a fresh session for every call and again for the
+reward, so the tools and the reward cannot disagree. Use different `seed_offset` values for training and
+evaluation tasks.
 
 ## Layout
 
@@ -88,18 +154,24 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev,baseline]"
 | `gst_env/solver.py` | Ground truth, including Rule 88A set-off with minimum cash |
 | `gst_env/grader.py` | Weighted field-level reward |
 | `gst_env/tools.py` | Tool interface and episode state |
+| `gst_env/cycle.py` | Cycle tier: generator, mock portal (GSTR-1/1A, IMS, 2B, 3B), client questions, solver and grader |
+| `gst_env_vf/` | verifiers (v1) adapter for both tiers, for `vf eval`, prime-rl and the Environments Hub |
 | `scripts/export_tasks.py` | Dumps tasks and answer keys as JSONL |
 | `scripts/baseline.py` | Runs Claude, OpenAI (gpt-*) or Sarvam models as the agent and records rewards and cost |
 | `scripts/reward_audit.py` | Scores degenerate and shortcut strategies to check the reward can't be gamed |
+| `scripts/vaccinate.py` | Plants 18 known defects in copies of the package and checks the test suite catches each one |
+| `gst_env/stats.py` | Wilson and bootstrap intervals for reported pass rates and rewards |
+| `evals/prereg-baseline-v1.md` | Preregistered bars, arms, decoys, stop rules and held-out seeds for the baseline run |
+| `evals/qualification/LEDGER.md` | Latest seeded-defect qualification result |
 
 ## Roadmap
 
 - **Expert tier:** CA-designed tasks covering credit and debit notes, GSTR-2B mismatches, amendments,
   Rule 42/43 reversals and late ITC under section 16(4).
-- **GUI tier:** a mock GST portal for computer-use agents, graded on the same ground truth.
+- **GUI tier:** the cycle tier's portal as screens for computer-use agents, graded on the same ground truth.
 - **More filings:** GSTR-1 reconciliation, TDS returns, Tally bookkeeping tasks.
 - **Recorded demonstrations** by practising CAs.
-- **Adapters** for Prime Intellect `verifiers` and HUD.
+- **HUD adapter** (the verifiers adapter is in `gst_env_vf`).
 
 ## Simplifications (CA review in progress)
 
@@ -107,8 +179,8 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev,baseline]"
 set-off). It does not reproduce today's filing workflow. Since the July 2025 tax period, GSTR-3B outward
 liability (Tables 3.1/3.2) auto-populates from GSTR-1 and is non-editable, with corrections through GSTR-1A.
 ITC flows from GSTR-2B through the Invoice Management System (IMS), and an ITC lock on Table 4A has been
-indicated for around July 2026. Modelling the GSTR-1 → IMS/2B → 3B workflow and the official table layout
-is the next tier.
+indicated for around July 2026. The **cycle tier** models the GSTR-1 → IMS/2B → 3B workflow; its own
+simplifications are listed below.
 
 1. Rates use the post-22 Sep 2025 slabs (0/5/18/40). No cess.
 2. Place of supply is the counterparty's state. No exports, SEZ or special place-of-supply services.
@@ -120,3 +192,17 @@ is the next tier.
 8. Credit-ledger opening balances are synthetic, and cash-ledger balances and interest are not modelled.
 
 Each item is a candidate for the expert tier once a CA has validated it.
+
+### Cycle tier simplifications
+
+1. GSTR-1 is invoice-level for B2C as well; the real return aggregates B2C (small) supplies by state and rate.
+2. Invoice corrections go through GSTR-1A only. No credit or debit notes, and no amendment of earlier periods.
+3. IMS: rejecting or holding a document keeps its credit out of this month. Pending-period limits, supplier-side
+   follow-up and the IMS rules for credit notes are not modelled.
+4. Goods not yet received are handled by keeping the document pending (or accepting it and reversing in 4B(2));
+   both give the same net ITC and both pass.
+5. Personal-use purchases are treated as blocked under section 17(5)(g) and reported in 4B(1).
+6. Reverse-charge purchases come from unregistered suppliers, so they never appear in IMS and are self-reported
+   in 3.1(d) and 4A(3). The RCM liability/ITC statement on the portal is not modelled.
+7. Table 4A(5) is locked to GSTR-2B (an ITC lock has been indicated but its notification is not confirmed).
+8. No interest, late fee, QRMP or composition filers. One month only; nothing carries forward to the next.

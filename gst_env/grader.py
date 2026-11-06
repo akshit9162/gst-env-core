@@ -28,9 +28,12 @@ def _get(d: dict, path: str):
 
 
 def grade(task: Task, submission: dict) -> dict:
-    truth = solve(task)
+    return score(solve(task), submission, WEIGHTS)
+
+
+def score(truth: dict, submission: dict, weights: dict[str, int]) -> dict:
     fields = {}
-    for path in WEIGHTS:
+    for path in weights:
         got = _get(submission, path)
         try:
             ok = got is not None and abs(float(got) - _get(truth, path)) <= TOLERANCE
@@ -40,13 +43,13 @@ def grade(task: Task, submission: dict) -> dict:
 
     # Fields whose true value is zero can only cost reward, never earn it;
     # otherwise an all-zero submission scores well on simple tasks.
-    earnable = [p for p in WEIGHTS if _get(truth, p) != 0]
-    zero = [p for p in WEIGHTS if _get(truth, p) == 0]
-    earned = sum(WEIGHTS[p] for p in earnable if fields[p])
-    penalty = sum(WEIGHTS[p] for p in zero if not fields[p])
-    score = max(earned - penalty, 0) / sum(WEIGHTS[p] for p in earnable)
+    earnable = [p for p in weights if _get(truth, p) != 0]
+    zero = [p for p in weights if _get(truth, p) == 0]
+    earned = sum(weights[p] for p in earnable if fields[p])
+    penalty = sum(weights[p] for p in zero if not fields[p])
+    value = max(earned - penalty, 0) / sum(weights[p] for p in earnable)
     return {
-        "reward": round(score, 4),
+        "reward": round(value, 4),
         "passed": all(fields.values()),
         "fields": fields,
     }

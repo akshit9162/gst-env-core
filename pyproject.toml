@@ -3,10 +3,12 @@ name = "gst-env"
 version = "0.1.0"
 description = "RL environment for India GSTR-3B filing with outcome-based grading"
 requires-python = ">=3.11"
+license = "Apache-2.0"
 
 [project.optional-dependencies]
 dev = ["pytest"]
 baseline = ["anthropic", "openai", "sarvamai"]
+vf = ["verifiers"]  # Python 3.12; see gst_env_vf
 
 [tool.setuptools]
-packages = ["gst_env"]
+packages = ["gst_env", "gst_env_vf"]
