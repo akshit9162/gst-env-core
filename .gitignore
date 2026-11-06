@@ -7,3 +7,6 @@ results/
 *.egg-info/
 .impeccable/
 .hallmark/
+
+# Private venture notes; never part of the public repo
+gtm/
