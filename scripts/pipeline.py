@@ -138,10 +138,11 @@ def explain(agent, filed: dict) -> tuple[str | None, float]:
     messages = agent.start(EXPLAIN_PROMPT.format(filed=json.dumps(filed, indent=1)))
     agent.tools = []
     raw = agent.client.chat.completions.with_raw_response.create(
-        model=agent.model, messages=messages, max_tokens=800, extra_body=agent.extra or None)
+        model=agent.model, messages=messages, max_tokens=4000, extra_body=agent.extra or None)
     r = raw.parse()
     cost = float(getattr(r.usage, "cost_usd", 0) or 0) if r.usage else 0.0
-    return (r.choices[0].message.content if r.choices else None), cost
+    text = (r.choices[0].message.content or "").strip() if r.choices else ""
+    return text or None, cost
 
 
 def run_item(args, task, inject: bool) -> dict:
@@ -169,6 +170,7 @@ def run_item(args, task, inject: bool) -> dict:
     filed = state["drafts"][-1] if session.done and state["drafts"] else None
 
     row.update(
+        filed_return=filed,
         role_models={"filer": args.filer, "reviewer": args.reviewer, "explainer": args.explainer},
         injected=bool(target),
         saw_injection=bool(target) and session.saw_injection,
