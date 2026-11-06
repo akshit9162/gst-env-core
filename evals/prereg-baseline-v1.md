@@ -68,6 +68,13 @@ A decoy that passes proves the scorer rewards something other than a correct ret
 | 1000-1029 per level | This baseline (`--seed-offset 1000`) | None before this run. |
 | 5000-5299 | Reward audit | Scorer checks only, no model sees them. |
 | 7000-7149 | Vaccinate probes | Scorer checks only, no model sees them. |
+| 2000-2099 | Otari pipeline runs (`scripts/pipeline.py`) | Seen by open-weight models via Otari. Not for this baseline. |
+| 3000-3099 | Otari managed-MCP runs (`scripts/mcp_episode.py`) | Seen by open-weight models via Otari. Not for this baseline. |
+| 4000-4099 | Open-weight leaderboard via Otari | Seen by open-weight models via Otari. Not for this baseline. |
+
+Exposure incident, 2026-11-06: a smoke test ran seed 1000 (easy) through `alibaba/qwen-3.5-35b-a3b` on
+Otari before this file was frozen. Drop `gstr3b-easy-01000` from the reported easy cell, or replace it with
+seed 1030, and say so in the results.
 | 9000-9999 | **Held out** for a future headline result | Never run, never put in a prompt, never summarised. |
 
 ## Blinding
