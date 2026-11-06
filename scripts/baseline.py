@@ -351,6 +351,12 @@ OTARI_HEADERS = ("Otari-Provider", "Otari-Model", "Otari-Fallback", "Otari-Attem
                  "Otari-Guardrails", "Otari-Request-ID")
 
 
+CODE_EXEC_HINT = ("\n\nYou can run Python in a sandbox with the otari_code_execution tool. "
+                  "Use it for the tax arithmetic instead of adding up figures in your head.")
+WEB_FETCH_HINT = ("\n\nYou can read a web page with the otari_web_fetch tool. When a decision rests on a GST "
+                  "rule, fetch the rule's text from cbicgst.gov.in or cbic-gst.gov.in and cite the section.")
+
+
 def otari_model(model: str) -> str:
     """'otari:deepseek/deepseek-v4-pro-0813' -> the name Otari takes (catalog id or routing policy)."""
     return model.removeprefix("otari:")
@@ -364,14 +370,16 @@ class OtariAgent:
     max_tokens = 8192
 
     def __init__(self, model: str, tools: list = TOOLS, user: str | None = None,
-                 guardrails: list[str] | None = None, code_exec: bool = False):
+                 guardrails: list[str] | None = None, code_exec: bool = False, web_fetch: bool = False):
         self.client = openai.OpenAI(base_url=os.environ.get("OTARI_BASE_URL", OTARI_BASE_URL),
                                     api_key=os.environ.get("OTARI_API_KEY"))
         self.model = otari_model(model)
         self.tools = [
             {"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["input_schema"]}}
             for t in tools
-        ] + ([{"type": "otari_code_execution"}] if code_exec else [])
+        ] + ([{"type": "otari_code_execution"}] if code_exec else []) \
+          + ([{"type": "otari_web_fetch"}] if web_fetch else [])
+        self.hints = (CODE_EXEC_HINT if code_exec else "") + (WEB_FETCH_HINT if web_fetch else "")
         self.extra = {}
         if user:
             self.extra["user"] = user  # needs a service key: one end user, one budget, per arm
@@ -379,7 +387,7 @@ class OtariAgent:
             self.extra["guardrails"] = [{"profile": p, "mode": "block", "on_unavailable": "block"} for p in guardrails]
 
     def start(self, prompt: str) -> list:
-        return [{"role": "user", "content": prompt}]
+        return [{"role": "user", "content": prompt + self.hints}]
 
     def turn(self, messages: list) -> Turn:
         try:
@@ -524,8 +532,8 @@ def make_session(task):
     return CycleSession(task) if isinstance(task, CycleTask) else FilingSession(task)
 
 
-def run_episode(agent, model: str, effort: str, task, max_turns: int) -> dict:
-    session = make_session(task)
+def run_episode(agent, model: str, effort: str, task, max_turns: int, session=None) -> dict:
+    session = session or make_session(task)
     messages = agent.start(session.instructions())
     input_tokens = output_tokens = cache_read = cache_write = turns = tool_calls = 0
     stop = None
@@ -713,6 +721,7 @@ def main() -> None:
     parser.add_argument("--otari-user", help="end-user id sent with every request (service key: per-arm budget)")
     parser.add_argument("--otari-guardrail", action="append", help="guardrail profile to run in block mode; repeatable")
     parser.add_argument("--otari-code-exec", action="store_true", help="offer Otari's sandboxed code execution tool")
+    parser.add_argument("--otari-web-fetch", action="store_true", help="offer Otari's web fetch tool")
     parser.add_argument("--est-output-tokens", type=int, default=1500, help="output tokens per turn assumed by the estimate")
     args = parser.parse_args()
     args.models = args.models or [args.model]
@@ -731,7 +740,8 @@ def main() -> None:
         dry_run(args, tasks)
         return
 
-    otari = dict(user=args.otari_user, guardrails=args.otari_guardrail, code_exec=args.otari_code_exec) \
+    otari = dict(user=args.otari_user, guardrails=args.otari_guardrail, code_exec=args.otari_code_exec,
+                 web_fetch=args.otari_web_fetch) \
         if args.model.startswith("otari:") else {}
     agent = make_agent(args.model, args.effort, CYCLE_TOOLS if args.tier == "cycle" else TOOLS, **otari)
     # Each reservation is the stub's worst-case estimate for one item.
