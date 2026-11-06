@@ -60,6 +60,8 @@ def board(rows: list[dict]) -> list[dict]:
             "usd_per_item": round(cost / n, 4),
             "usd_per_pass": round(cost / passed, 4) if passed else None,
             "fallback_share": rate(sum(bool(t.get("fallback_turns")) for t in turns), len(turns)),
+            "code_executions": sum(t.get("code_executions", 0) for t in turns),
+            "web_fetches": sum(t.get("web_fetches", 0) for t in turns),
             "served_models": sorted({m for t in turns for m in t.get("served_models", [])}),
             "budget_stops": sum(r["stop_reason"] == "budget_exceeded" for r in rs),
             "poisoned": len(poisoned),

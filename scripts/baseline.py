@@ -406,6 +406,10 @@ class OtariAgent:
                         gateway={"error_code": code, "status": e.status_code} if code else None)
         r = raw.parse()
         gateway = {h: raw.headers[h] for h in OTARI_HEADERS if h in raw.headers}
+        # Otari's own tools (sandbox, fetch) run inside the request and are reported here
+        ran = getattr(r, "otari_tool_calls", None) or []
+        if ran:
+            gateway["tool_calls"] = [c.get("type") if isinstance(c, dict) else getattr(c, "type", None) for c in ran]
         usage = sarvam_usage(r.usage)  # same OpenAI Chat Completions usage shape
         cost = getattr(r.usage, "cost_usd", None) if r.usage else None
         meta = dict(gateway_cost_usd=float(cost) if cost is not None else None, gateway=gateway)
@@ -600,6 +604,8 @@ def otari_summary(turns: list[dict]) -> dict:
     return {
         "served_models": served,
         "fallback_turns": sum(t.get("Otari-Fallback") == "true" for t in turns),
+        "code_executions": sum(c == "code_execution" for t in turns for c in t.get("tool_calls", [])),
+        "web_fetches": sum(c in ("web_fetch", "fetch") for t in turns for c in t.get("tool_calls", [])),
         "guardrails": [t["Otari-Guardrails"] for t in turns if "Otari-Guardrails" in t],
         "error_code": next((t["error_code"] for t in turns if t.get("error_code")), None),
         "request_ids": [t["Otari-Request-ID"] for t in turns if "Otari-Request-ID" in t],

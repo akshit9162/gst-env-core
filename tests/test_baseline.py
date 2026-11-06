@@ -190,7 +190,8 @@ def _completion(calls, cost, finish="tool_calls"):
 
     tool_calls = [NS(id=f"c{i}", function=NS(name=n, arguments=a)) for i, (n, a) in enumerate(calls)]
     usage = NS(prompt_tokens=120, completion_tokens=30, prompt_tokens_details=NS(cached_tokens=20), cost_usd=cost)
-    return NS(choices=[NS(finish_reason=finish, message=NS(content="", tool_calls=tool_calls))], usage=usage)
+    return NS(choices=[NS(finish_reason=finish, message=NS(content="", tool_calls=tool_calls))], usage=usage,
+              otari_tool_calls=[{"type": "code_execution", "status": "completed"}])
 
 
 def test_otari_agent_files_a_return_and_bills_what_otari_reports(monkeypatch):
@@ -218,6 +219,7 @@ def test_otari_agent_files_a_return_and_bills_what_otari_reports(monkeypatch):
     assert row["otari"]["served_models"] == ["deepseek-v4-pro", "glm-5p3"]
     assert row["otari"]["fallback_turns"] == 1 and row["otari"]["request_ids"] == ["r1", "r2"]
     assert row["otari"]["guardrails"] == ["prompt-injection=pass"]
+    assert row["otari"]["code_executions"] == 2 and row["otari"]["web_fetches"] == 0
     extra = sent[0]["extra_body"]
     assert extra["user"] == "arm-deepseek"
     assert extra["guardrails"] == [{"profile": "prompt-injection", "mode": "block", "on_unavailable": "block"}]
