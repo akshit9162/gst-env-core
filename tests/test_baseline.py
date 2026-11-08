@@ -225,7 +225,10 @@ def test_otari_agent_files_a_return_and_bills_what_otari_reports(monkeypatch):
     assert extra["guardrails"] == [{"profile": "prompt-injection", "mode": "block", "on_unavailable": "block"}]
     assert {"type": "otari_code_execution"} in sent[0]["tools"]
     # the tool result went back as a Chat Completions tool message
-    assert sent[1]["messages"][2]["role"] == "tool" and sent[1]["messages"][2]["tool_call_id"] == "c0"
+    # task rules ride in the system message (a guardrail flags rules sent as a user message)
+    assert [m["role"] for m in sent[0]["messages"][:2]] == ["system", "user"]
+    assert "GSTR-3B" in sent[0]["messages"][0]["content"]
+    assert sent[1]["messages"][3]["role"] == "tool" and sent[1]["messages"][3]["tool_call_id"] == "c0"
 
 
 def test_otari_budget_refusal_stops_the_episode_cleanly(monkeypatch):
@@ -248,3 +251,106 @@ def test_otari_budget_refusal_stops_the_episode_cleanly(monkeypatch):
 
 def test_otari_dry_run_needs_no_price_row():
     assert baseline.agent_class("otari:gst-filer") is baseline.OtariAgent
+
+
+def test_otari_error_code_read_from_body_when_header_missing():
+    import httpx
+    import openai
+
+    body = {"detail": {"message": "Request blocked by guardrail policy.", "code": "guardrail_violation",
+                       "guardrails": [{"profile": "lakera-guard", "explanation": None, "score": 1.0}]}}
+    response = httpx.Response(403, json=body,
+                              request=httpx.Request("POST", "https://eu.api.otari.ai/api/v1/chat/completions"))
+    err = openai.PermissionDeniedError("blocked", response=response, body=body)
+    code, info = baseline.otari_error(err)
+    assert code == "guardrail_violation"
+    assert info["guardrails"] == [{"profile": "lakera-guard", "score": 1.0}]
+
+    plain = httpx.Response(502, json={"detail": "guardrail profile 'x' could not be evaluated"},
+                           request=httpx.Request("POST", "https://eu.api.otari.ai/api/v1/chat/completions"))
+    code, info = baseline.otari_error(openai.InternalServerError("bad", response=plain, body=None))
+    assert code is None and "could not be evaluated" in info["detail"]
+
+
+def test_collect_stream_folds_chunks_into_one_completion():
+    from types import SimpleNamespace as NS
+
+    def chunk(content=None, calls=None, finish=None, usage=None, ran=None):
+        delta = NS(content=content, tool_calls=calls)
+        return NS(choices=[NS(delta=delta, finish_reason=finish)] if usage is None else [],
+                  usage=usage, otari_tool_calls=ran)
+
+    fn = lambda name=None, args=None: NS(name=name, arguments=args)
+    stream = [
+        chunk(ran=[{"id": "x", "type": "code_execution", "status": "in_progress"}]),
+        chunk(ran=[{"id": "x", "type": "code_execution", "status": "completed", "stdout": "391\n"}]),
+        chunk(content="Adding."),
+        chunk(calls=[NS(index=0, id="c1", function=fn("add", ""))]),
+        chunk(calls=[NS(index=0, id=None, function=fn(None, '{"a": 1,'))]),
+        chunk(calls=[NS(index=0, id=None, function=fn(None, ' "b": 2}'))], finish="tool_calls"),
+        chunk(usage=NS(prompt_tokens=10, completion_tokens=5, prompt_tokens_details=None, cost_usd="0.0103")),
+    ]
+    r = baseline.collect_stream(iter(stream))
+    msg = r.choices[0].message
+    assert r.choices[0].finish_reason == "tool_calls" and msg.content == "Adding."
+    assert [(t.id, t.function.name, t.function.arguments) for t in msg.tool_calls] == [("c1", "add", '{"a": 1, "b": 2}')]
+    assert r.usage.cost_usd == "0.0103"
+    assert [c["type"] for c in r.otari_tool_calls] == ["code_execution"]  # counted once, when finished
+
+
+def test_otari_timeout_ends_the_episode_instead_of_the_batch(monkeypatch):
+    import httpx
+    import openai
+
+    monkeypatch.setenv("OTARI_API_KEY", "test")
+    agent = baseline.make_agent("otari:alibaba/qwen-3.5-35b-a3b", "high")
+    timeout = openai.APITimeoutError(request=httpx.Request("POST", "https://eu.api.otari.ai/api/v1/chat/completions"))
+    monkeypatch.setattr(baseline.OtariAgent, "RETRY_WAIT", 0)
+    sent = []
+    agent.client = _otari_client([timeout] * (1 + baseline.OtariAgent.RETRIES), sent)
+    row = baseline.run_episode(agent, "otari:alibaba/qwen-3.5-35b-a3b", "high", generate_task(4, "easy"), max_turns=5)
+    assert row["stop_reason"] == "timeout" and not row["submitted"]
+    assert len(sent) == 1 + baseline.OtariAgent.RETRIES  # retried before giving up
+    assert row["infra_error"]  # a gateway failure, not the model's
+
+
+def test_otari_retries_a_502_then_carries_on(monkeypatch):
+    import json
+
+    import httpx
+    import openai
+
+    monkeypatch.setenv("OTARI_API_KEY", "test")
+    monkeypatch.setattr(baseline.OtariAgent, "RETRY_WAIT", 0)
+    task = generate_task(3, "easy")
+    agent = baseline.make_agent("otari:gst-filer", "high")
+    bad = httpx.Response(502, request=httpx.Request("POST", "https://api.otari.ai/api/v1/chat/completions"))
+    agent.client = _otari_client([
+        openai.InternalServerError("bad gateway", response=bad, body=None),
+        ({}, _completion([("submit_return", json.dumps({"gstr3b": solve(task)}))], 0.001)),
+    ], [])
+    row = baseline.run_episode(agent, "otari:gst-filer", "high", task, max_turns=3)
+    assert row["passed"] and not row["infra_error"]
+
+
+def test_budget_refusal_is_not_retried_or_called_infra(monkeypatch):
+    import httpx
+    import openai
+
+    monkeypatch.setenv("OTARI_API_KEY", "test")
+    agent = baseline.make_agent("otari:gst-filer", "high")
+    response = httpx.Response(403, headers={"Otari-Error-Code": "budget_exceeded"},
+                              request=httpx.Request("POST", "https://api.otari.ai/api/v1/chat/completions"))
+    sent = []
+    agent.client = _otari_client([openai.PermissionDeniedError("budget", response=response, body=None)], sent)
+    row = baseline.run_episode(agent, "otari:gst-filer", "high", generate_task(4, "easy"), max_turns=5)
+    assert len(sent) == 1 and not row["infra_error"]
+
+
+def test_summarize_samples_leaves_out_infra_failures(capsys):
+    rows = [{"difficulty": "cycle", "task_id": "a", "passed": True, "infra_error": False},
+            {"difficulty": "cycle", "task_id": "a", "passed": False, "infra_error": True},
+            {"difficulty": "cycle", "task_id": "b", "passed": False, "infra_error": True}]
+    baseline.summarize_samples(rows, ["cycle"], 2)
+    out = capsys.readouterr().out
+    assert "pass@1=100%" in out and "over 1 tasks" in out and "2 attempts lost to gateway errors" in out

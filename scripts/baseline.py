@@ -28,6 +28,7 @@ import argparse
 import json
 import os
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -362,6 +363,68 @@ def otari_model(model: str) -> str:
     return model.removeprefix("otari:")
 
 
+def otari_error(e: "openai.APIStatusError") -> tuple[str | None, dict]:
+    """Otari's refusal code and details. The code comes in the Otari-Error-Code header on some
+    refusals and only in the body (detail.code) on others, e.g. guardrail_violation."""
+    code = e.response.headers.get("Otari-Error-Code")
+    info = {}
+    if rid := e.response.headers.get("Otari-Request-ID"):
+        info["Otari-Request-ID"] = rid
+    try:
+        detail = e.response.json().get("detail")
+    except (ValueError, AttributeError):
+        detail = None
+    if isinstance(detail, dict):
+        code = code or detail.get("code")
+        if detail.get("guardrails"):
+            info["guardrails"] = [{"profile": g.get("profile"), "score": g.get("score")} for g in detail["guardrails"]]
+    elif isinstance(detail, str):
+        info["detail"] = detail[:300]
+    return code, info
+
+
+def collect_stream(parsed):
+    """Fold a streamed chat completion back into the non-streamed shape turn() reads:
+    .choices[0].message.{content,tool_calls}, .choices[0].finish_reason, .usage and
+    .otari_tool_calls (one entry per finished gateway tool run). A non-stream object
+    (anything with .choices) is returned as is."""
+    from types import SimpleNamespace as NS
+
+    if hasattr(parsed, "choices"):
+        return parsed
+    content, calls, finish, usage, ran = [], {}, None, None, {}
+    for chunk in parsed:
+        for run in getattr(chunk, "otari_tool_calls", None) or []:
+            run = run if isinstance(run, dict) else dict(run)
+            if run.get("status") != "in_progress":
+                ran[run.get("id") or len(ran)] = run
+        if getattr(chunk, "usage", None):
+            usage = chunk.usage
+        for choice in chunk.choices or []:
+            finish = choice.finish_reason or finish
+            delta = choice.delta
+            if delta is None:
+                continue
+            if delta.content:
+                content.append(delta.content)
+            for tc in delta.tool_calls or []:
+                slot = calls.setdefault(tc.index, {"id": None, "name": "", "arguments": []})
+                slot["id"] = tc.id or slot["id"]
+                if tc.function:
+                    slot["name"] = tc.function.name or slot["name"]
+                    slot["arguments"].append(tc.function.arguments or "")
+    tool_calls = [NS(id=c["id"], function=NS(name=c["name"], arguments="".join(c["arguments"]) or "{}"))
+                  for _, c in sorted(calls.items()) if c["name"]]
+    choices = [NS(finish_reason=finish, message=NS(content="".join(content), tool_calls=tool_calls))] if finish or tool_calls or content else []
+    return NS(choices=choices, usage=usage, otari_tool_calls=list(ran.values()))
+
+
+def infra_stop(stop: str | None) -> bool:
+    """Stops caused by the gateway, not the model: timeouts, resets, 5xx, upstream rate limits."""
+    return stop in ("timeout", "connection_error", "upstream_rate_limited", "api_error_429") or \
+        bool(stop and stop.startswith("api_error_5"))
+
+
 class OtariAgent:
     """Chat Completions through the Otari gateway. Function tools run here, in the env;
     Otari's own tools (code execution) run in the gateway inside the same request.
@@ -386,11 +449,27 @@ class OtariAgent:
         if guardrails:
             self.extra["guardrails"] = [{"profile": p, "mode": "block", "on_unavailable": "block"} for p in guardrails]
 
+    # The task goes in the system message: Otari's prompt-injection guardrail (Lakera) reads a
+    # user message full of rules for an AI as an attack and refuses the whole episode.
+    START = "Begin. Read the data with the tools, then submit."
+
     def start(self, prompt: str) -> list:
-        return [{"role": "user", "content": prompt + self.hints}]
+        return [{"role": "system", "content": prompt + self.hints}, {"role": "user", "content": self.START}]
+
+    RETRIES = 3  # gateway timeouts, resets, 5xx and upstream 429 come and go; retry before giving up
+    RETRY_WAIT = 5.0  # seconds, doubled each retry
 
     def turn(self, messages: list) -> Turn:
+        for attempt in range(self.RETRIES + 1):
+            t = self._turn(messages)
+            if not infra_stop(t.stop) or attempt == self.RETRIES:
+                return t
+            time.sleep(self.RETRY_WAIT * 2 ** attempt)
+
+    def _turn(self, messages: list) -> Turn:
         try:
+            # Streamed: hosted Otari's CDN cuts a non-streamed request at ~60 s with a 504
+            # (mozilla-ai/otari#2692), and a hard task's turn with code execution runs longer.
             raw = self.client.chat.completions.with_raw_response.create(
                 model=self.model,
                 messages=messages,
@@ -398,13 +477,18 @@ class OtariAgent:
                 tool_choice="auto",
                 max_tokens=self.max_tokens,
                 extra_body=self.extra or None,
+                stream=True,
+                stream_options={"include_usage": True},
             )
+            r = collect_stream(raw.parse())
         except openai.APIStatusError as e:
-            code = e.response.headers.get("Otari-Error-Code")
+            code, info = otari_error(e)
             # budget_exceeded and guardrail_violation are Otari doing its job, not a crash
             return Turn([], code or f"api_error_{e.status_code}", 0, 0, fatal=True,
-                        gateway={"error_code": code, "status": e.status_code} if code else None)
-        r = raw.parse()
+                        gateway={"error_code": code, "status": e.status_code, **info})
+        except openai.APIConnectionError as e:  # includes timeouts; one stuck request must not end a batch
+            kind = "timeout" if isinstance(e, openai.APITimeoutError) else "connection_error"
+            return Turn([], kind, 0, 0, fatal=True, gateway={"error_code": kind})
         gateway = {h: raw.headers[h] for h in OTARI_HEADERS if h in raw.headers}
         # Otari's own tools (sandbox, fetch) run inside the request and are reported here
         ran = getattr(r, "otari_tool_calls", None) or []
@@ -586,6 +670,7 @@ def run_episode(agent, model: str, effort: str, task, max_turns: int, session=No
         "turns": turns,
         "tool_calls": tool_calls,
         "stop_reason": stop,
+        "infra_error": not session.done and infra_stop(stop),
         "input_tokens": input_tokens,
         "cache_read_tokens": cache_read,
         "cache_write_tokens": cache_write,
@@ -607,7 +692,9 @@ def otari_summary(turns: list[dict]) -> dict:
         "code_executions": sum(c == "code_execution" for t in turns for c in t.get("tool_calls", [])),
         "web_fetches": sum(c in ("web_fetch", "fetch") for t in turns for c in t.get("tool_calls", [])),
         "guardrails": [t["Otari-Guardrails"] for t in turns if "Otari-Guardrails" in t],
+        "guardrail_scores": [g for t in turns for g in t.get("guardrails", [])],
         "error_code": next((t["error_code"] for t in turns if t.get("error_code")), None),
+        "error_detail": next((t["detail"] for t in turns if t.get("detail")), None),
         "request_ids": [t["Otari-Request-ID"] for t in turns if "Otari-Request-ID" in t],
     }
 
@@ -657,6 +744,10 @@ def summarize(rows: list[dict], difficulties: list[str]) -> None:
 def summarize_samples(rows: list[dict], difficulties: list[str], k: int) -> None:
     """With k samples per task: pass@1, pass@k, and how many tasks give a learning
     signal (solved sometimes, not always). A task never solved in k tries teaches nothing."""
+    lost = sum(bool(r.get("infra_error")) for r in rows)
+    rows = [r for r in rows if not r.get("infra_error")]
+    if lost:
+        print(f"  {lost} attempts lost to gateway errors, left out of pass@k")
     for d in difficulties:
         by_task: dict[str, list[bool]] = {}
         for r in rows:

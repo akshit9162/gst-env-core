@@ -71,6 +71,7 @@ A decoy that passes proves the scorer rewards something other than a correct ret
 | 2000-2099 | Otari pipeline runs (`scripts/pipeline.py`) | Seen by open-weight models via Otari. Not for this baseline. |
 | 3000-3099 | Otari managed-MCP runs (`scripts/mcp_episode.py`) | Seen by open-weight models via Otari. Not for this baseline. |
 | 4000-4099 | Open-weight leaderboard via Otari | Seen by open-weight models via Otari. Not for this baseline. |
+| 6000-6199 (cycle tier) | Cycle-tier pass@k demand numbers via Otari (2026-11-08) | Seen by open-weight models via Otari. Not for this baseline. |
 
 Exposure incident, 2026-11-06: a smoke test ran seed 1000 (easy) through `alibaba/qwen-3.5-35b-a3b` on
 Otari before this file was frozen. Drop `gstr3b-easy-01000` from the reported easy cell, or replace it with
@@ -105,3 +106,6 @@ two arms smaller than about 20 points.
 # Step 4, only after the owner approves the pilot's spend table
 .venv/bin/python scripts/baseline.py --model claude-opus-5-5 --per-difficulty 30 --cap 25 --out results/opus-5-5.jsonl
 ```
+
+## 2026-11-08: Otari prompt layout
+From 2026-11-08 the Otari agent sends the task rules as a system message and a short "Begin." user message (previously one user message). Reason: the org-mandated Lakera guardrail flags the rules as a prompt attack when they arrive in the user role. Leaderboard rows from seeds 4000-4001 (2026-11-06/07) used the old layout; rows after this date use the new one. Compare across the change only with that caveat, or re-run.

@@ -43,16 +43,22 @@ def run_mcp_episode(client, model: str, task, registry: Registry, public_url: st
     try:
         raw = client.chat.completions.with_raw_response.create(
             model=baseline.otari_model(model),
-            messages=[{"role": "user", "content": PROMPT.format(episode=episode, instructions=session.instructions())}],
+            messages=[{"role": "system", "content": PROMPT.format(episode=episode, instructions=session.instructions())},
+                      {"role": "user", "content": "Begin."}],
             max_tokens=max_tokens,
             extra_body={"mcp_servers": [server], "max_tool_iterations": max_iterations},
+            stream=True, stream_options={"include_usage": True},  # the whole tool loop runs in this one request
         )
-        r = raw.parse()
+        r = baseline.collect_stream(raw.parse())
         gateway = {h: raw.headers[h] for h in baseline.OTARI_HEADERS if h in raw.headers}
         cost = float(getattr(r.usage, "cost_usd", 0) or 0) if r.usage else 0.0
         stop = r.choices[0].finish_reason if r.choices else "no_choices"
+    except baseline.openai.APIConnectionError as e:
+        stop = "timeout" if isinstance(e, baseline.openai.APITimeoutError) else "connection_error"
     except baseline.openai.APIStatusError as e:
-        stop = e.response.headers.get("Otari-Error-Code") or f"api_error_{e.status_code}"
+        code, info = baseline.otari_error(e)
+        stop = code or f"api_error_{e.status_code}"
+        gateway = {"error_code": code, **info}
     result = session.result or {"reward": 0.0, "passed": False, "fields": {}}
     return {
         "task_id": task.task_id, "difficulty": task.difficulty, "n_invoices": len(task.invoices),

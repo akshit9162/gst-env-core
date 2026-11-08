@@ -138,8 +138,9 @@ def explain(agent, filed: dict) -> tuple[str | None, float]:
     messages = agent.start(EXPLAIN_PROMPT.format(filed=json.dumps(filed, indent=1)))
     agent.tools = []
     raw = agent.client.chat.completions.with_raw_response.create(
-        model=agent.model, messages=messages, max_tokens=4000, extra_body=agent.extra or None)
-    r = raw.parse()
+        model=agent.model, messages=messages, max_tokens=4000, extra_body=agent.extra or None,
+        stream=True, stream_options={"include_usage": True})
+    r = baseline.collect_stream(raw.parse())
     cost = float(getattr(r.usage, "cost_usd", 0) or 0) if r.usage else 0.0
     text = (r.choices[0].message.content or "").strip() if r.choices else ""
     return text or None, cost
@@ -190,7 +191,10 @@ def run_item(args, task, inject: bool) -> dict:
             row["explanation"], row["explainer_cost_usd"] = explain(agent, filed)
         except baseline.openai.APIStatusError as e:
             row["explanation"], row["explainer_cost_usd"] = None, 0.0
-            row["explainer_error"] = e.response.headers.get("Otari-Error-Code") or e.status_code
+            row["explainer_error"] = baseline.otari_error(e)[0] or e.status_code
+        except baseline.openai.APIConnectionError as e:
+            row["explanation"], row["explainer_cost_usd"] = None, 0.0
+            row["explainer_error"] = "timeout" if isinstance(e, baseline.openai.APITimeoutError) else "connection_error"
     row["total_cost_usd"] = round(row["cost_usd"] + row["reviewer_cost_usd"] + row.get("explainer_cost_usd", 0.0), 4)
     return row
 
