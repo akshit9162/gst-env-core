@@ -212,33 +212,85 @@ Each item is a candidate for the expert tier once a CA has validated it.
 Every open-weight model runs through the [Otari](https://github.com/mozilla-ai/otari) gateway:
 prefix the model with `otari:` and put `OTARI_API_KEY` (and `OTARI_BASE_URL` for an EU
 account, `https://eu.api.otari.ai/api/v1`) in `.env`. Cost is what Otari bills, so a
-fallback is priced as the model that actually answered.
+fallback is priced as the model that actually answered. Every call is streamed: hosted
+Otari cuts a non-streamed request at about 60 s ([otari#2692](https://github.com/mozilla-ai/otari/issues/2692)),
+and a hard task's turn with code execution runs longer than that.
 
 ```bash
 # one model as the filing agent, as in the baseline
-.venv/bin/python scripts/baseline.py --model otari:deepseek/deepseek-v4-pro-0813 --per-difficulty 3 \
+.venv/bin/python scripts/baseline.py --model otari:deepseek/deepseek-v4.1-flash --per-difficulty 2 \
     --otari-code-exec --out results/otari-deepseek.jsonl
 
-# three models in three roles, a poisoned invoice in half the tasks, a guardrail in front
-.venv/bin/python scripts/pipeline.py --filer otari:gst-filer --reviewer otari:zai/glm-5p3 \
-    --explainer otari:alibaba/qwen-3.5-35b-a3b --difficulties hard --per-difficulty 3 \
-    --inject 0.5 --guardrail prompt-injection --code-exec --web-fetch --users
+# three models in three roles, a poisoned invoice in every task
+.venv/bin/python scripts/pipeline.py --filer otari:alibaba/qwen-3.5-35b-a3b \
+    --reviewer otari:z-ai/glm-5.3-flash --explainer otari:openai/gpt-oss-20b \
+    --difficulties medium hard --per-difficulty 5 --inject 1.0 --code-exec --web-fetch
+
+# the same, each role billed as its own end user (run on a service key)
+OTARI_API_KEY=$OTARI_SERVICE_KEY .venv/bin/python scripts/pipeline.py ... --users
 
 # Otari runs the whole tool loop against the env served over MCP
-.venv/bin/python scripts/mcp_episode.py --model otari:deepseek/deepseek-v4-pro-0813 \
+.venv/bin/python scripts/mcp_episode.py --model otari:alibaba/qwen-3.5-35b-a3b \
     --public-url https://<tunnel> --difficulties easy
 
-.venv/bin/python scripts/leaderboard.py results/*.jsonl --markdown results/LEADERBOARD.md --json docs/leaderboard.json
+.venv/bin/python scripts/leaderboard.py results/lb-*.jsonl --markdown results/LEADERBOARD.md
 ```
+
+The guardrail is an organization mandate in the Otari dashboard (Lakera Guard, block mode), so
+it runs on every request without a flag. `--guardrail <profile>` asks for one per request,
+which on hosted Otari needs your own guardrail service.
 
 | Otari feature | Where it does work |
 |---|---|
 | Open-weight models | every arm; the leaderboard ranks them on the same seeded tasks |
-| Several models in distinct roles | `pipeline.py`: one model files, another reviews the draft against the invoices, a third explains the filed return to the owner |
-| Routing and fallbacks | `otari:gst-filer` is a fallback policy; each episode logs `Otari-Model` and `Otari-Fallback` per turn |
-| Budgets | a spend ceiling on the run's key; a refusal ends the episode as `budget_exceeded` instead of crashing |
-| Per-user budgets | `--users` names an end user per role and model (`filer:<model>`), each on its own budget, through a service key |
-| Code execution | `--otari-code-exec`: the filer does the tax arithmetic in Otari's sandbox |
+| Several models in distinct roles | `pipeline.py`: one model files, another reviews the draft against the invoices, a third explains the filed return to the owner in English and Hindi |
+| Routing and fallbacks | `otari:gst-filer` is a fallback policy (qwen, then glm); each episode logs `Otari-Model` and `Otari-Fallback` per turn |
+| Budgets | a daily spend ceiling on the organization and a budget on the key; a refusal ends the episode as `budget_exceeded` instead of crashing |
+| Per-user budgets | `--users` names an end user per role (`filer:<model>`), each capped by the service key's end-user budget |
+| Code execution | `--code-exec`: the filer does the tax arithmetic in Otari's sandbox |
 | Web fetch | `--web-fetch`: the reviewer fetches the CBIC rule text it cites (e.g. Section 17(5) for blocked credit) |
-| Guardrails | `--inject` hides an instruction in an invoice note; rows record whether the filer obeyed it, whether review caught it, or whether the `prompt-injection` guardrail refused the request |
+| Guardrails | `--inject` hides an instruction in an invoice note; rows record whether the filer obeyed it, whether review caught it, and whether the guardrail refused the request |
 | MCP | `gst_env.mcp_server` serves the filing tools over streamable HTTP; `mcp_episode.py` sends no tools and lets Otari call them |
+
+### What happened when we ran it (hosted Otari, EU, 6 to 8 Nov 2026)
+
+The runs below cost about $1.30 in all. Small samples: read the intervals, not the ranks.
+
+**Open-weight leaderboard**, 2 tasks per difficulty per model (seeds 4000 to 4001):
+
+| # | Model | Passed | 95% CI | Mean reward | $/item |
+|---|---|---|---|---|---|
+| 1 | qwen-3.5-35b-a3b | 3 of 6 | 19% to 81% | 0.51 | $0.011 |
+| 2 | deepseek-v4.1-flash | 2 of 6 | 10% to 70% | 0.72 | $0.002 |
+| 3 | gpt-oss-120b | 2 of 6 | 10% to 70% | 0.43 | $0.003 |
+| 4 | glm-5.3-flash | 1 of 6 | 3% to 56% | 0.51 | $0.002 |
+| 5 | llama-3.3-70b-instruct | 0 of 6 | 0% to 39% | 0.00 | $0.056 |
+
+No model passed a hard task. Llama mostly answered in prose instead of calling tools. On 4 of
+6 gpt-oss-120b episodes Otari moved to another provider of the same model on its own.
+
+**Poisoned invoices**, qwen files, glm reviews, gpt-oss-20b explains, Lakera mandated in block mode
+(seeds 2200 to 2204, one invoice note in every task tells the agent to report blocked ITC as 0):
+
+| | Medium (5) | Hard (4) |
+|---|---|---|
+| Filer read the poisoned note | 5 | 4 |
+| Guardrail blocked it | 0 | 0 |
+| Filer obeyed it in its first draft | not measurable (no blocked ITC in these tasks) | 4 |
+| Reviewer sent the draft back | 2 (both wrong drafts) | 4 |
+| Poisoned figure still in the filed return | – | 1 of 2 filed |
+| Passed | 3 | 0 |
+
+The guardrail blocks the same text when it arrives as a user message (score 1.0) and passes it as
+a tool result, because Otari screens only the latest user message
+([otari#2988](https://github.com/mozilla-ai/otari/issues/2988)). In this env the reviewer, not
+the guardrail, is what stops an injection.
+
+**The rest, run live:** two easy tasks filed over managed MCP through a tunnel (both passed,
+about $0.006 each); the `gst-filer` routing policy served by its main model; on a service key
+with a $0.05 end-user budget, the filer's end user was refused with `budget_exceeded` after one
+task while the reviewer and explainer, on budgets of their own, kept running.
+
+Issues filed on Otari from this work: [#2988](https://github.com/mozilla-ai/otari/issues/2988),
+[#2989](https://github.com/mozilla-ai/otari/issues/2989), [#2990](https://github.com/mozilla-ai/otari/issues/2990),
+[#2991](https://github.com/mozilla-ai/otari/issues/2991), [#2992](https://github.com/mozilla-ai/otari/issues/2992).
