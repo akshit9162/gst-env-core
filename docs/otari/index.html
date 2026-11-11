@@ -202,8 +202,8 @@
   <section id="leaderboard">
     <div class="container">
       <div class="head">
-        <div><p class="eyebrow">Open-weight leaderboard</p><h2>No model passed a hard return.</h2></div>
-        <p>Same seeded tasks for every model (2 easy, 2 medium, 2 hard). Small samples, so read the intervals, not the ranks: the bar is the 95% interval, the tick is the pass rate. A pass means all 13 fields of the return are right.</p>
+        <div><p class="eyebrow">Open-weight leaderboard</p><h2>Easy returns are solved. Hard ones mostly are not.</h2></div>
+        <p>Same seeded tasks for every model (5 easy, 5 medium, 5 hard). Small samples, so read the intervals, not the ranks: the bar is the 95% interval, the tick is the pass rate. A pass means all 13 fields of the return are right.</p>
       </div>
       <div class="scroll">
         <table>
@@ -338,6 +338,7 @@ fetch("data.json").then(r => r.json()).then(d => {
     { t: "Code execution", p: `The filer does the tax arithmetic in Otari’s sandbox instead of in its head: ${inj.code_executions} sandbox runs across the poisoned batch.`, proof: `${rid(inj.episodes[0].filer_request_ids[0])} · <code>--code-exec</code>` },
     { t: "Web fetch", p: `The reviewer fetches the CBIC rule text it cites (for example Section 17(5) on blocked credit) before approving a draft: ${inj.web_fetches} fetches across the batch.`, proof: `${esc(ex.task)} ${rid(ex.reviewer_request_ids[0])} · <code>--web-fetch</code>` },
     { t: "Guardrails", p: `Lakera Guard is mandated for the organization in block mode. A direct injection is refused with a 403. The same text inside an invoice is not screened, which is <a href="#injection">the finding below</a>.`, img: "img/guardrails.png", alt: "Otari Guardrails page with the Lakera Guard mandate in block mode", proof: `direct injection refused ${rid(inject?.request_id)}` },
+    { t: "Guard model pre-screen", p: `To close that gap, every invoice note is screened before the filer runs: through Otari as a user message, so Lakera sees it, and through the guard model Qwen3Guard. A flagged note is withheld. ${d.prescreen.withheld} of ${d.prescreen.episodes} poisoned notes were withheld (${d.prescreen.by_guardrail} by Lakera, ${d.prescreen.by_guard_model} by Qwen3Guard); one passed both, the filer obeyed it and the reviewer sent the draft back. Qwen3Guard also flagged ${d.prescreen.clean_flagged} of ${d.prescreen.clean_notes} clean notes as PII, which the screen now ignores.`, proof: `Lakera ${rid(d.prescreen.request_ids.otari_guardrail)} Qwen3Guard ${rid(d.prescreen.request_ids.guard_model)} missed ${rid(d.prescreen.request_ids.missed)} · <code>--prescreen</code>` },
     { t: "MCP", p: `The environment also runs as a remote MCP server. Otari connected to it, listed the filing tools and ran the whole loop itself from one request. Both returns passed.`, proof: d.mcp.map(m => `${esc(m.task)} ${m.passed ? '<span class="pill ok">passed</span>' : ""} ${rid(m.request_id)}`).join(" ") },
   ];
   $("#feature-grid").innerHTML = features.map((f, i) => `
