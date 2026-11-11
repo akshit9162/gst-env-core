@@ -1,0 +1,20 @@
+# The live demo behind "Run it live" on https://akshit9162.github.io/gst-env-core/otari/
+# Deploy: https://render.com/deploy?repo=https://github.com/akshit9162/gst-env-core
+services:
+  - type: web
+    name: gst-env-live
+    runtime: python
+    plan: free
+    branch: otari
+    buildCommand: pip install ".[baseline]" fastapi uvicorn
+    startCommand: uvicorn app:app --app-dir deploy/live --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: OTARI_BASE_URL
+        value: https://eu.api.otari.ai/api/v1
+      - key: OTARI_API_KEY
+        sync: false
+      - key: RUNS_PER_DAY
+        value: "40"
