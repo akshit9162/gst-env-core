@@ -402,7 +402,7 @@ fetch("data.json").then(r => r.json()).then(d => {
 }).catch(() => { $("#feature-grid").innerHTML = "<p>Could not load data.json.</p>"; });
 
 // ---- Run it live -------------------------------------------------------
-const LIVE_API = new URLSearchParams(location.search).get("api") || ""; // the Render URL, set after deploy
+const LIVE_API = new URLSearchParams(location.search).get("api") || "https://gst-env-live.onrender.com";
 const flatten = o => Object.entries(o || {}).flatMap(([k, v]) => v && typeof v === "object" ? Object.entries(v).map(([k2, v2]) => [`${k}.${k2}`, v2]) : [[k, v]]);
 const liveInvoices = (invs, screened) => `<table class="inv"><thead><tr><th>Invoice</th><th>Kind</th><th class="num">Taxable</th><th>Rate</th>${screened ? "<th>Note</th><th>Screen</th>" : ""}</tr></thead><tbody>${invs.map(i => `<tr>
   <td><code>${esc(i.invoice_id)}</code></td><td>${esc(i.kind)}${i.reverse_charge ? " · RCM" : ""}</td><td class="num">${inr(i.taxable_value)}</td><td>${esc(i.rate)}%</td>
