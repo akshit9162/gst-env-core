@@ -1,5 +1,18 @@
 # gst-env
 
+> **Devs Wilding / Otari entry (this branch).** Every month, a small Indian business owner has to file
+> GSTR-3B: what they sold, the tax they collected, the input credit they can claim, and the cash they owe.
+> Get a field wrong and they pay interest or lose credit. Here open-weight models do it through Mozilla's
+> Otari gateway: a guard model and Otari's guardrail screen every invoice note for prompt injection,
+> Qwen files the return, GLM checks it against the invoices and the CBIC rules it fetches, and gpt-oss
+> explains it to the owner in English and Hindi. A deterministic solver grades all 13 fields against the law.
+> The leaderboard is the proof the task is hard: easy returns are solved, but on hard ones (reverse
+> charge, blocked credit, interstate splits) the best open-weight model passed 1 in 5.
+>
+> **Try it live, see each feature with an Otari request ID, and read the leaderboard:**
+> https://akshit9162.github.io/gst-env-core/otari/ · Evidence: [EVIDENCE.md](EVIDENCE.md) ·
+> Details: [Running through Otari](#running-through-otari) · 414 tests
+
 **Walkthrough:** [akshit9162.github.io/gst-env](https://akshit9162.github.io/gst-env)
 
 **RL environments and benchmarks for Indian tax and compliance work, used to train and evaluate AI agents.**
