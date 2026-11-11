@@ -42,6 +42,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["https://akshit9162.github.io"
 jobs: dict[str, dict] = {}
 busy = threading.Lock()
 day = {"date": None, "runs": 0}
+current = {"job": None}  # the run in progress, so a second visitor can watch it
 
 
 class RunRequest(BaseModel):
@@ -111,11 +112,14 @@ def start(req: RunRequest) -> dict:
     if day["runs"] >= RUNS_PER_DAY:
         raise HTTPException(429, f"today's {RUNS_PER_DAY} live runs are used up; the recorded runs are below")
     if not busy.acquire(blocking=False):
-        raise HTTPException(409, "a run is in progress; try again in a minute")
+        if current["job"] not in jobs:  # the run is starting this instant
+            raise HTTPException(409, "a run is starting; try again in a few seconds")
+        return {"job": current["job"], "seed": jobs[current["job"]]["seed"], "attached": True}
     day["runs"] += 1
     seed = random.randint(90_000, 99_999)  # never one of the published tasks
     job_id = uuid.uuid4().hex[:12]
     jobs[job_id] = {"status": "running", "started": time.time(), "seed": seed}
+    current["job"] = job_id
     threading.Thread(target=run, args=(job_id, req, seed), daemon=True).start()
     return {"job": job_id, "seed": seed}
 
