@@ -53,7 +53,7 @@
   .bar i { position: absolute; top: 0; bottom: 0; background: color-mix(in oklab, var(--color-ink) 18%, transparent); border-radius: 4px; }
   .bar b { position: absolute; top: -3px; width: 3px; height: 14px; background: var(--color-ink); border-radius: 2px; }
   code, .rid { font-family: var(--mono); font-size: 0.85em; }
-  .rid { display: inline-flex; align-items: center; gap: 6px; background: var(--color-paper-3); border: 0; border-radius: 4px; padding: 2px 6px; cursor: pointer; color: var(--color-ink-2); white-space: nowrap; }
+  .rid { display: inline-flex; align-items: center; gap: 6px; background: var(--color-paper-3); border: 0; border-radius: 4px; padding: 4px 8px; cursor: pointer; color: var(--color-ink-2); white-space: nowrap; }
   .rid:hover { background: var(--color-accent-soft); color: var(--color-ink); }
   .rid.copied { background: var(--color-green-soft); }
   .features { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-md); }
@@ -73,7 +73,7 @@
   .step b { display: block; font-family: var(--font-display); font-size: var(--text-2xl); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
   .step span { display: block; font-size: var(--text-sm); color: var(--color-ink-2); margin-top: 4px; }
   .note { background: var(--color-sheet); border: var(--rule-hair) solid var(--color-rule); border-left: 3px solid var(--color-accent); border-radius: 6px; padding: var(--space-md); font-family: var(--mono); font-size: var(--text-sm); white-space: pre-wrap; }
-  .pill { display: inline-block; font-family: var(--mono); font-size: var(--text-xs); padding: 2px 8px; border-radius: 999px; background: var(--color-paper-3); white-space: nowrap; }
+  .pill { display: inline-block; font-family: var(--mono); font-size: var(--text-xs); padding: 3px 10px; border-radius: 999px; background: var(--color-paper-3); white-space: nowrap; }
   .pill.ok { background: var(--color-green-soft); color: var(--color-green); }
   .pill.no { background: color-mix(in oklab, var(--color-error) 14%, var(--color-paper)); color: var(--color-error); }
   .pill.warn { background: var(--color-accent-soft); color: var(--color-ink); }
@@ -136,9 +136,8 @@
 <main id="main">
   <section class="hero">
     <div class="container">
-      <p class="eyebrow">Mozilla Developers Wilding · Build on Otari</p>
       <h1>Open-weight models file India’s GST return, through Otari.</h1>
-      <p class="lead">gst-env is an RL environment for GSTR-3B, the monthly return every Indian business files. Models read invoices through tools and file the return; a deterministic solver grades every field against the law. Every model call on this page went through Mozilla’s Otari gateway, and every claim has an Otari request ID you can look up.</p>
+      <p class="lead">gst-env is an RL environment for GSTR-3B, the monthly return every Indian business files. Models read invoices through tools and file the return; a deterministic solver grades every field against the law. Every model call on this page went through Mozilla’s Otari gateway, and every claim has an Otari request ID you can look up. Built for Mozilla’s Developers Wilding hackathon.</p>
       <div class="actions">
         <a class="btn btn--accent" href="#features">See each feature, with proof</a>
         <a class="btn btn--ghost" href="https://github.com/akshit9162/gst-env-core/blob/otari/EVIDENCE.md">EVIDENCE.md</a>
