@@ -442,7 +442,7 @@ function liveResult(r) {
         if (s.status === "error") throw new Error(s.error);
         st.textContent = `screening, filing, reviewing… ${Math.round(s.elapsed)}s (typically 2–5 min)`;
       }
-    } catch (e) { st.textContent = "Run failed: " + e.message; }
+    } catch (e) { clearTimeout(wake); st.textContent = "Run failed: " + e.message; }
     go.disabled = false;
   });
 })();
