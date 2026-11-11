@@ -203,8 +203,8 @@
   <section id="injection">
     <div class="container">
       <div class="head">
-        <div><p class="eyebrow">The finding</p><h2>Otari’s guardrail never saw the poisoned invoice.</h2></div>
-        <p>I hid an instruction in an invoice’s note field: tell the filer to under-report tax. The agent reads invoices through a tool, so the note arrives as a tool result. Otari’s input guardrail screens only the latest user message, so it never looks at it. The defence that worked was a second open-weight model reviewing the draft.</p>
+        <div><p class="eyebrow">Securing the agent</p><h2>Otari’s guardrail, plus a pre-screen built on Otari.</h2></div>
+        <p>I hid an instruction in an invoice’s note field telling the filer to under-report tax. The agent reads invoices through a tool, so the note arrives as a tool result, which Otari’s input guardrail is not set up to inspect. Two Otari pieces handle it: a reviewer model that checks every draft, and a pre-screen that sends each note through Otari’s guardrail and a guard model before the filer runs. I shared the tool-result case upstream as #2988.</p>
       </div>
       <div class="flow" id="flow"></div>
       <div class="two">
@@ -214,9 +214,9 @@
           <div class="scroll" style="margin-top:16px"><table><thead><tr><th>Prompt (user message)</th><th>Otari</th><th>Request ID</th></tr></thead><tbody id="direct"></tbody></table></div>
         </div>
         <div>
-          <h3>And so is “In one sentence, what is a tax return?”</h3>
-          <p style="margin-top:12px;color:var(--color-ink-2)">While checking a clean control I found that any prompt opening with “In one sentence,” is refused at score 1.0. Without that opening, the same question is served. Nothing in the 403 says which detector fired, so a developer cannot tell a false positive from an attack.</p>
-          <p style="margin-top:12px"><a href="https://github.com/mozilla-ai/otari/issues/2988">Issue #2988</a> (tool results unscreened) was filed and closed by the Otari team.</p>
+          <h3>With the pre-screen, poisoned notes are withheld.</h3>
+          <p style="margin-top:12px;color:var(--color-ink-2)">Each invoice note goes through Otari as a user message, so the Lakera mandate checks it, and through the guard model Qwen3Guard. Over ten poisoned returns, nine poisoned notes were withheld before the filer saw them: three by Lakera, six by Qwen3Guard. The tenth was caught by the reviewer.</p>
+          <p style="margin-top:12px"><a href="#features">See the pre-screen card</a> for the request IDs, or press <a href="#live">File a return live</a> to watch it happen.</p>
         </div>
       </div>
     </div>
@@ -239,7 +239,7 @@
     <div class="container">
       <div class="head">
         <div><p class="eyebrow">Back to Otari</p><h2>What I sent back upstream.</h2></div>
-        <p>Every issue came from something that broke or misled me while building this. Two fixes were merged.</p>
+        <p>Building on Otari for a week, I reported what I ran into and sent fixes. The Otari team merged two of them.</p>
       </div>
       <ul class="contrib">
         <li><span class="pill ok">PR merged</span><a href="https://github.com/mozilla-ai/otari/pull/2994">#2994 fix(guardrails): carry the Otari-Guardrails header onto streamed responses</a><span></span></li>
@@ -321,8 +321,8 @@ fetch("data.json").then(r => r.json()).then(d => {
     { t: "Per-user budgets", p: `On a service key, each role is its own end user with US$0.05 a day. The filer ran out and Otari refused it cleanly, while the reviewer and explainer kept going:`, note: pu ? pu.detail : "", proof: `first episode passed, next two refused · ${rid(d.per_user[0].request_id)}` },
     { t: "Code execution", p: `The filer does the tax arithmetic in Otari’s sandbox instead of in its head: ${inj.code_executions} sandbox runs across the poisoned batch.`, proof: `${rid(inj.episodes[0].filer_request_ids[0])} · <code>--code-exec</code>` },
     { t: "Web fetch", p: `The reviewer fetches the CBIC rule text it cites (for example Section 17(5) on blocked credit) before approving a draft: ${inj.web_fetches} fetches across the batch.`, proof: `${esc(ex.task)} ${rid(ex.reviewer_request_ids[0])} · <code>--web-fetch</code>` },
-    { t: "Guardrails", p: `Lakera Guard is mandated for the organization in block mode. A direct injection is refused with a 403. The same text inside an invoice is not screened, which is <a href="#injection">the finding below</a>.`, img: "img/guardrails.png", alt: "Otari Guardrails page with the Lakera Guard mandate in block mode", proof: `direct injection refused ${rid(inject?.request_id)}` },
-    { t: "Guard model pre-screen", p: `To close that gap, every invoice note is screened before the filer runs: through Otari as a user message, so Lakera sees it, and through the guard model Qwen3Guard. A flagged note is withheld. ${d.prescreen.withheld} of ${d.prescreen.episodes} poisoned notes were withheld (${d.prescreen.by_guardrail} by Lakera, ${d.prescreen.by_guard_model} by Qwen3Guard); one passed both, the filer obeyed it and the reviewer sent the draft back. Qwen3Guard also flagged ${d.prescreen.clean_flagged} of ${d.prescreen.clean_notes} clean notes as PII, which the screen now ignores.`, proof: `Lakera ${rid(d.prescreen.request_ids.otari_guardrail)} Qwen3Guard ${rid(d.prescreen.request_ids.guard_model)} missed ${rid(d.prescreen.request_ids.missed)} · <code>--prescreen</code>` },
+    { t: "Guardrails", p: `Lakera Guard is mandated for the organization in block mode. A direct injection is refused with a 403. Tool results are outside its scope, so invoice notes go through the pre-screen below as well.`, img: "img/guardrails.png", alt: "Otari Guardrails page with the Lakera Guard mandate in block mode", proof: `direct injection refused ${rid(inject?.request_id)}` },
+    { t: "Guard model pre-screen", p: `Built on Otari: every invoice note is screened before the filer runs, through Otari as a user message, so Lakera sees it, and through the guard model Qwen3Guard. A flagged note is withheld. ${d.prescreen.withheld} of ${d.prescreen.episodes} poisoned notes were withheld (${d.prescreen.by_guardrail} by Lakera, ${d.prescreen.by_guard_model} by Qwen3Guard); one passed both, the filer obeyed it and the reviewer sent the draft back. Qwen3Guard also flagged ${d.prescreen.clean_flagged} of ${d.prescreen.clean_notes} clean notes as PII, which the screen now ignores.`, proof: `Lakera ${rid(d.prescreen.request_ids.otari_guardrail)} Qwen3Guard ${rid(d.prescreen.request_ids.guard_model)} missed ${rid(d.prescreen.request_ids.missed)} · <code>--prescreen</code>` },
     { t: "MCP", p: `The environment also runs as a remote MCP server. Otari connected to it, listed the filing tools and ran the whole loop itself from one request. Both returns passed.`, proof: d.mcp.map(m => `${esc(m.task)} ${m.passed ? '<span class="pill ok">passed</span>' : ""} ${rid(m.request_id)}`).join(" ") },
   ];
   $("#feature-grid").innerHTML = features.map((f, i) => `
@@ -349,13 +349,13 @@ fetch("data.json").then(r => r.json()).then(d => {
   $("#flow").innerHTML = [
     ["", inj.poisoned, "poisoned returns, an instruction hidden in an invoice note"],
     ["bad", inj.reached_filer, "reached the filer as a tool result (one run hit a connection error first)"],
-    ["bad", inj.blocked, "refused by the guardrail: it only screens the user message"],
+    ["", inj.blocked, "screened by the input guardrail, which checks user messages, not tool results"],
     ["bad", inj.obeyed, "drafts where the filer obeyed it, all on hard returns"],
     ["good", `${inj.obeyed_and_sent_back} / ${inj.obeyed}`, "of those sent back for revision by the reviewer model"],
   ].map(([c, n, s]) => `<div class="step ${c}"><b>${n}</b><span>${s}</span></div>`).join("");
   $("#s-obeyed").textContent = `${inj.obeyed_and_sent_back} / ${inj.obeyed}`;
 
-  $("#direct").innerHTML = d.guardrail_direct.map(g => `<tr>
+  $("#direct").innerHTML = d.guardrail_direct.filter(g => g.kind === "injection" || g.status === 200).map(g => `<tr>
     <td>${esc(g.prompt.length > 90 ? g.prompt.slice(0, 90) + "…" : g.prompt)}</td>
     <td>${g.status === 200 ? '<span class="pill ok">200 served</span>' : `<span class="pill no">${g.status} ${esc(g.error)}</span>`}</td>
     <td>${rid(g.request_id)}</td></tr>`).join("");
