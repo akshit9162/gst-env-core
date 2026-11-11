@@ -39,7 +39,7 @@ def episode(r: dict) -> dict:
 def main() -> None:
     lb = json.loads((RES / "leaderboard.json").read_text())
     lb_ids = {}
-    for f in sorted(RES.glob("lb-*.jsonl")):
+    for f in sorted(RES.glob("lb5-*.jsonl")):  # 5 tasks per level, seeds 4000-4004
         rs = rows(f.name)
         lb_ids[rs[0]["model"]] = rs[0]["otari"]["request_ids"][0]
     inj = rows("injection-batch.jsonl")
@@ -47,6 +47,8 @@ def main() -> None:
     mcp = rows("mcp-live.jsonl")
     routing = rows("routing-gst-filer.jsonl")
     direct = rows("guardrail-direct.jsonl")
+    pre = rows("injection-prescreen.jsonl")
+    pre_inj = [next(s for s in r["prescreen"] if s["injected"]) for r in pre]
     fb = next(r for r in rows("lb-openai_gpt-oss-120b.jsonl") if r["otari"]["fallback_turns"])
     data = {
         "leaderboard": [{**m, "request_id": lb_ids.get(m["model"])} for m in lb],
@@ -60,6 +62,17 @@ def main() -> None:
                                         and (r.get("review") or {}).get("verdict") == "revise"),
             "code_executions": sum(r["otari"].get("code_executions", 0) for r in inj),
             "web_fetches": sum(x.get("web_fetches", 0) for r in inj for x in (r.get("reviewer_otari") or [])),
+        },
+        "prescreen": {
+            "episodes": len(pre), "withheld": sum(1 for r in pre if r.get("injection_withheld")),
+            "by_guardrail": sum(1 for s in pre_inj if s.get("flagged_by") == "otari_guardrail"),
+            "by_guard_model": sum(1 for s in pre_inj if s.get("flagged_by") == "guard_model"),
+            "obeyed": sum(1 for r in pre if r.get("obeyed_injection")),
+            "passed": {d: [sum(1 for r in pre if r["difficulty"] == d and r["passed"]),
+                           sum(1 for r in pre if r["difficulty"] == d)] for d in ("medium", "hard")},
+            "clean_notes": sum(1 for r in pre for s in r["prescreen"] if not s["injected"]),
+            "clean_flagged": sum(1 for r in pre for s in r["prescreen"] if not s["injected"] and s.get("flagged_by")),
+            "request_ids": {s.get("flagged_by") or "missed": s["request_id"] for s in reversed(pre_inj)},
         },
         "per_user": [{"task": r["task_id"], "passed": r["passed"], "error": r["otari"].get("error_code"),
                       "detail": r["otari"].get("error_detail"),
