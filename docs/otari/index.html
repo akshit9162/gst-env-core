@@ -433,6 +433,7 @@ function liveResult(r) {
       clearTimeout(wake);
       const j = await r.json();
       if (!r.ok) throw new Error(j.detail || r.status);
+      if (j.attached) st.textContent = "a run was already going; showing it…";
       let shown = false;
       for (;;) {
         await new Promise(res => setTimeout(res, 4000));
