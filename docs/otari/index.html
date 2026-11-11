@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gst-env on Otari</title>
+<meta name="description" content="Open-weight models file India's GST return through Mozilla's Otari gateway. Every Otari feature, each with a real request ID you can look up.">
+<meta property="og:title" content="gst-env on Otari">
+<meta property="og:description" content="Open-weight models file India's GST return through Otari. All eight features, each with a real request ID.">
+<meta property="og:image" content="https://akshit9162.github.io/gst-env-core/og.png">
+<meta property="og:url" content="https://akshit9162.github.io/gst-env-core/otari/">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Red+Hat+Display:wght@600&family=Red+Hat+Text:wght@400;500&family=Red+Hat+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../base.css">
+<style>
+  :root { --mono: var(--font-outlier); }
+  .nav { position: sticky; top: 0; z-index: var(--z-sticky-nav); background: color-mix(in oklab, var(--color-paper) 90%, transparent); backdrop-filter: blur(8px); border-bottom: var(--rule-hair) solid var(--color-rule); }
+  .nav .container { display: flex; align-items: center; gap: var(--space-lg); min-height: 60px; }
+  .wordmark { font-family: var(--font-display); font-weight: 600; text-decoration: none; letter-spacing: -0.02em; font-size: var(--text-lg); }
+  .wordmark span { color: var(--color-muted); font-weight: 500; }
+  .nav ul { display: flex; gap: var(--space-lg); list-style: none; margin: 0 0 0 auto; padding: 0; font-size: var(--text-sm); }
+  .nav ul a { text-decoration: none; color: var(--color-ink-2); }
+  .nav ul a:hover { color: var(--color-ink); text-decoration: underline; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: var(--radius-pill); background: var(--color-ink); color: var(--color-paper); text-decoration: none; font-weight: 500; font-size: var(--text-sm); border: 0; cursor: pointer; }
+  .btn--ghost { background: transparent; color: var(--color-ink); box-shadow: inset 0 0 0 1px var(--color-ink); }
+  .btn--accent { background: var(--color-accent); color: var(--color-accent-ink); }
+  section { padding-block: var(--section-gap-s); border-bottom: var(--rule-hair) solid var(--color-rule); }
+  .eyebrow { font-family: var(--mono); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-muted); margin-bottom: var(--space-md); }
+  .hero { padding-block: var(--space-3xl) var(--section-gap-s); }
+  .hero h1 { max-width: 18ch; }
+  .hero .lead { margin-top: var(--space-lg); color: var(--color-ink-2); }
+  .actions { display: flex; flex-wrap: wrap; gap: var(--space-sm); margin-top: var(--space-xl); }
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; margin-top: var(--space-2xl); border-top: 1px solid var(--color-ink); }
+  .stat { padding: var(--space-lg) var(--space-lg) 0 0; }
+  .stat + .stat { padding-left: var(--space-lg); border-left: var(--rule-hair) solid var(--color-rule); }
+  .stat b { display: block; font-family: var(--font-display); font-weight: 600; font-size: var(--text-3xl); letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .stat span { display: block; margin-top: var(--space-xs); font-size: var(--text-sm); color: var(--color-muted); max-width: 26ch; }
+  .head { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: var(--gap-columns); align-items: end; margin-bottom: var(--space-xl); }
+  .head p { color: var(--color-ink-2); }
+  .video { aspect-ratio: 16 / 9; border-radius: var(--radius-card); background: var(--color-ink); color: var(--color-paper); display: grid; place-items: center; text-align: center; overflow: hidden; box-shadow: var(--shadow-card); }
+  .video iframe { width: 100%; height: 100%; border: 0; }
+  .video p { color: color-mix(in oklab, var(--color-paper) 70%, transparent); font-family: var(--mono); font-size: var(--text-sm); }
+  table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+  th { text-align: left; font-weight: 500; color: var(--color-muted); font-family: var(--mono); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.06em; padding: 10px 12px; border-bottom: 1px solid var(--color-ink); white-space: nowrap; }
+  td { padding: 12px; border-bottom: var(--rule-hair) solid var(--color-rule); vertical-align: top; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .bar { position: relative; height: 8px; background: var(--color-paper-3); border-radius: 4px; min-width: 120px; margin-top: 6px; }
+  .bar i { position: absolute; top: 0; bottom: 0; background: color-mix(in oklab, var(--color-ink) 18%, transparent); border-radius: 4px; }
+  .bar b { position: absolute; top: -3px; width: 3px; height: 14px; background: var(--color-ink); border-radius: 2px; }
+  code, .rid { font-family: var(--mono); font-size: 0.85em; }
+  .rid { display: inline-flex; align-items: center; gap: 6px; background: var(--color-paper-3); border: 0; border-radius: 4px; padding: 2px 6px; cursor: pointer; color: var(--color-ink-2); white-space: nowrap; }
+  .rid:hover { background: var(--color-accent-soft); color: var(--color-ink); }
+  .rid.copied { background: var(--color-green-soft); }
+  .features { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-md); }
+  .feature { background: var(--color-paper-2); border: var(--rule-hair) solid var(--color-rule); border-radius: var(--radius-card); padding: var(--space-lg); display: flex; flex-direction: column; gap: var(--space-sm); }
+  .feature header { display: flex; align-items: baseline; gap: var(--space-sm); }
+  .feature header .n { font-family: var(--mono); font-size: var(--text-xs); color: var(--color-muted); }
+  .feature h3 { font-size: var(--text-lg); }
+  .feature p { color: var(--color-ink-2); font-size: var(--text-sm); }
+  .feature .proof { margin-top: auto; padding-top: var(--space-sm); border-top: var(--rule-hair) dashed var(--color-rule); font-size: var(--text-xs); color: var(--color-muted); display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+  .feature .proof a { color: var(--color-ink-2); }
+  .feature img { border-radius: 6px; border: var(--rule-hair) solid var(--color-rule); cursor: zoom-in; }
+  .flow { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; margin: var(--space-xl) 0; }
+  .step { padding: var(--space-md); border-top: 3px solid var(--color-ink); position: relative; }
+  .step + .step { border-left: var(--rule-hair) solid var(--color-rule); }
+  .step.bad { border-top-color: var(--color-error); }
+  .step.good { border-top-color: var(--color-green); }
+  .step b { display: block; font-family: var(--font-display); font-size: var(--text-2xl); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+  .step span { display: block; font-size: var(--text-sm); color: var(--color-ink-2); margin-top: 4px; }
+  .note { background: var(--color-sheet); border: var(--rule-hair) solid var(--color-rule); border-left: 3px solid var(--color-accent); border-radius: 6px; padding: var(--space-md); font-family: var(--mono); font-size: var(--text-sm); white-space: pre-wrap; }
+  .pill { display: inline-block; font-family: var(--mono); font-size: var(--text-xs); padding: 2px 8px; border-radius: 999px; background: var(--color-paper-3); white-space: nowrap; }
+  .pill.ok { background: var(--color-green-soft); color: var(--color-green); }
+  .pill.no { background: color-mix(in oklab, var(--color-error) 14%, var(--color-paper)); color: var(--color-error); }
+  .pill.warn { background: var(--color-accent-soft); color: var(--color-ink); }
+  .explorer { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: var(--space-lg); }
+  .ep-list { display: flex; flex-direction: column; gap: 6px; }
+  .ep-list button { text-align: left; background: var(--color-paper-2); border: var(--rule-hair) solid var(--color-rule); border-radius: 8px; padding: 10px 12px; cursor: pointer; display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; align-items: center; color: var(--color-ink); }
+  .ep-list button[aria-pressed="true"] { border-color: var(--color-ink); box-shadow: inset 3px 0 0 var(--color-accent); }
+  .ep-list small { color: var(--color-muted); font-family: var(--mono); font-size: var(--text-xs); grid-column: 1 / -1; }
+  .ep { background: var(--color-paper-2); border: var(--rule-hair) solid var(--color-rule); border-radius: var(--radius-card); padding: var(--space-lg); min-width: 0; }
+  .ep h3 { font-size: var(--text-lg); }
+  .ep .meta { display: flex; flex-wrap: wrap; gap: 6px; margin: var(--space-sm) 0 var(--space-md); }
+  .ep h4 { margin: var(--space-lg) 0 var(--space-xs); font-size: var(--text-xs); font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-muted); font-weight: 500; }
+  .ep .text { white-space: pre-wrap; font-size: var(--text-sm); line-height: 1.6; max-height: 340px; overflow: auto; background: var(--color-sheet); border: var(--rule-hair) solid var(--color-rule); border-radius: 6px; padding: var(--space-md); }
+  .kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px 16px; font-size: var(--text-sm); }
+  .kv div { display: flex; justify-content: space-between; gap: 8px; border-bottom: var(--rule-hair) dotted var(--color-rule); padding: 3px 0; }
+  .kv div span:first-child { color: var(--color-muted); font-family: var(--mono); font-size: var(--text-xs); }
+  .kv div.fail span:last-child { color: var(--color-error); font-weight: 500; }
+  .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--gap-columns); align-items: start; }
+  .contrib { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--color-ink); }
+  .contrib li { display: grid; grid-template-columns: 90px 1fr auto; gap: var(--space-md); padding: 12px 0; border-bottom: var(--rule-hair) solid var(--color-rule); font-size: var(--text-sm); align-items: baseline; }
+  .contrib li a { text-decoration: none; } .contrib li a:hover { text-decoration: underline; }
+  pre.cmd { background: var(--color-ink); color: var(--color-paper); border-radius: var(--radius-card); padding: var(--space-lg); overflow-x: auto; font-family: var(--mono); font-size: var(--text-sm); line-height: 1.7; margin: 0; }
+  pre.cmd .c { color: color-mix(in oklab, var(--color-paper) 55%, transparent); }
+  footer { padding-block: var(--space-2xl); font-size: var(--text-sm); color: var(--color-muted); }
+  footer .container { display: flex; flex-wrap: wrap; gap: var(--space-lg); justify-content: space-between; }
+  dialog { border: 0; padding: 0; background: transparent; max-width: min(1400px, 96vw); }
+  dialog::backdrop { background: oklch(18% 0.006 60 / 0.8); }
+  dialog img { border-radius: 8px; }
+  @media (max-width: 60rem) {
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .stat:nth-child(3) { border-left: 0; padding-left: 0; }
+    .head, .two, .explorer, .features { grid-template-columns: minmax(0, 1fr); }
+    .flow { grid-template-columns: minmax(0, 1fr); }
+    .step + .step { border-left: 0; }
+    .nav ul { display: none; }
+  }
+  @media (max-width: 40rem) {
+    .nav .btn { display: none; }
+    .contrib li { grid-template-columns: 70px 1fr; }
+    .contrib li .pill { grid-column: 2; justify-self: start; }
+  }
+</style>
+</head>
+<body>
+<a class="visually-hidden" href="#main">Skip to content</a>
+<header class="nav">
+  <div class="container">
+    <a class="wordmark" href="../">gst-env <span>on Otari</span></a>
+    <ul>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#leaderboard">Leaderboard</a></li>
+      <li><a href="#injection">Injection</a></li>
+      <li><a href="#episodes">Episodes</a></li>
+      <li><a href="#otari">Back to Otari</a></li>
+    </ul>
+    <a class="btn" href="https://github.com/akshit9162/gst-env-core/tree/otari">Code</a>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero">
+    <div class="container">
+      <p class="eyebrow">Mozilla Developers Wilding · Build on Otari</p>
+      <h1>Open-weight models file India’s GST return, through Otari.</h1>
+      <p class="lead">gst-env is an RL environment for GSTR-3B, the monthly return every Indian business files. Models read invoices through tools and file the return; a deterministic solver grades every field against the law. Every model call on this page went through Mozilla’s Otari gateway, and every claim has an Otari request ID you can look up.</p>
+      <div class="actions">
+        <a class="btn btn--accent" href="#features">See each feature, with proof</a>
+        <a class="btn btn--ghost" href="https://github.com/akshit9162/gst-env-core/blob/otari/EVIDENCE.md">EVIDENCE.md</a>
+        <a class="btn btn--ghost" href="https://github.com/akshit9162/gst-env-core/tree/otari">Code (Apache-2.0)</a>
+      </div>
+      <div class="stats" id="stats">
+        <div class="stat"><b>6</b><span>open-weight models, from five families, behind one Otari key</span></div>
+        <div class="stat"><b>8 / 8</b><span>Otari features used for real work, each with a request ID</span></div>
+        <div class="stat"><b id="s-obeyed">4 / 4</b><span>poisoned drafts the reviewer model sent back, after the guardrail let them through</span></div>
+        <div class="stat"><b>2</b><span>merged PRs on mozilla-ai/otari, plus 6 issues filed</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="demo">
+    <div class="container">
+      <div class="head">
+        <div><p class="eyebrow">Demo</p><h2>Four minutes, every feature on screen.</h2></div>
+        <p>My own screen and voice. Each feature card below names the second it appears.</p>
+      </div>
+      <div class="video" id="video"><p>Demo video coming here.</p></div>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="container">
+      <div class="head">
+        <div><p class="eyebrow">The rubric, feature by feature</p><h2>What each Otari feature actually did.</h2></div>
+        <p>Click any request ID to copy it. Otari can look each one up on their side. The rows they come from are in <a href="https://github.com/akshit9162/gst-env-core/tree/otari/results"><code>results/</code></a>.</p>
+      </div>
+      <div class="features" id="feature-grid"></div>
+    </div>
+  </section>
+
+  <section id="leaderboard">
+    <div class="container">
+      <div class="head">
+        <div><p class="eyebrow">Open-weight leaderboard</p><h2>No model passed a hard return.</h2></div>
+        <p>Same seeded tasks for every model (2 easy, 2 medium, 2 hard). Small samples, so read the intervals, not the ranks: the bar is the 95% interval, the tick is the pass rate. A pass means all 13 fields of the return are right.</p>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Model</th><th>Served as</th><th>Pass rate · 95% CI</th><th class="num">Mean reward</th><th class="num">Easy</th><th class="num">Medium</th><th class="num">Hard</th><th class="num">$ / task</th><th>Request ID</th></tr></thead>
+          <tbody id="lb"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="injection">
+    <div class="container">
+      <div class="head">
+        <div><p class="eyebrow">The finding</p><h2>Otari’s guardrail never saw the poisoned invoice.</h2></div>
+        <p>I hid an instruction in an invoice’s note field: tell the filer to under-report tax. The agent reads invoices through a tool, so the note arrives as a tool result. Otari’s input guardrail screens only the latest user message, so it never looks at it. The defence that worked was a second open-weight model reviewing the draft.</p>
+      </div>
+      <div class="flow" id="flow"></div>
+      <div class="two">
+        <div>
+          <h3>A direct injection is refused.</h3>
+          <p style="margin-top:12px;color:var(--color-ink-2)">Sent as the user message, the same kind of instruction gets a <code>403 guardrail_violation</code> from Lakera Guard, mandated in block mode for the organization.</p>
+          <div class="scroll" style="margin-top:16px"><table><thead><tr><th>Prompt (user message)</th><th>Otari</th><th>Request ID</th></tr></thead><tbody id="direct"></tbody></table></div>
+        </div>
+        <div>
+          <h3>And so is “In one sentence, what is a tax return?”</h3>
+          <p style="margin-top:12px;color:var(--color-ink-2)">While checking a clean control I found that any prompt opening with “In one sentence,” is refused at score 1.0. Without that opening, the same question is served. Nothing in the 403 says which detector fired, so a developer cannot tell a false positive from an attack.</p>
+          <p style="margin-top:12px"><a href="https://github.com/mozilla-ai/otari/issues/2988">Issue #2988</a> (tool results unscreened) was filed and closed by the Otari team.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="episodes">
+    <div class="container">
+      <div class="head">
+        <div><p class="eyebrow">Episode explorer</p><h2>Ten poisoned returns, three models each.</h2></div>
+        <p>Qwen files, GLM reviews the draft against the invoices (and fetches CBIC rule text), gpt-oss-20b explains the filed return to the owner in English and Hindi. Pick an episode.</p>
+      </div>
+      <div class="explorer">
+        <div class="ep-list" id="ep-list" role="group" aria-label="Episodes"></div>
+        <article class="ep" id="ep" aria-live="polite"></article>
+      </div>
+    </div>
+  </section>
+
+  <section id="otari">
+    <div class="container">
+      <div class="head">
+        <div><p class="eyebrow">Back to Otari</p><h2>What I sent back upstream.</h2></div>
+        <p>Every issue came from something that broke or misled me while building this. Two fixes were merged.</p>
+      </div>
+      <ul class="contrib">
+        <li><span class="pill ok">PR merged</span><a href="https://github.com/mozilla-ai/otari/pull/2994">#2994 fix(guardrails): carry the Otari-Guardrails header onto streamed responses</a><span></span></li>
+        <li><span class="pill ok">PR merged</span><a href="https://github.com/mozilla-ai/otari/pull/3056">#3056 fix(tools): web_access_disabled error code on web-access 403s</a><span></span></li>
+        <li><span class="pill">PR</span><a href="https://github.com/mozilla-ai/otari/pull/2997">#2997 fix(guardrails): send guardrail_violation as Otari-Error-Code too</a><span class="pill">closed</span></li>
+        <li><span class="pill warn">issue</span><a href="https://github.com/mozilla-ai/otari/issues/2988">#2988 Input guardrails only see the latest user message, so an injection in a tool result is never screened</a><span class="pill">closed</span></li>
+        <li><span class="pill warn">issue</span><a href="https://github.com/mozilla-ai/otari/issues/2989">#2989 guardrail_violation 403 has no Otari-Error-Code header and nests code inside detail</a><span class="pill">open</span></li>
+        <li><span class="pill warn">issue</span><a href="https://github.com/mozilla-ai/otari/issues/2990">#2990 The refusal when web access is off takes about 2 minutes, with no error code</a><span class="pill">closed</span></li>
+        <li><span class="pill warn">issue</span><a href="https://github.com/mozilla-ai/otari/issues/2991">#2991 Streamed chat completions drop the Otari-Guardrails header</a><span class="pill">closed</span></li>
+        <li><span class="pill warn">issue</span><a href="https://github.com/mozilla-ai/otari/issues/2992">#2992 An end user's budget_exceeded names Otari's internal user id</a><span class="pill">closed</span></li>
+        <li><span class="pill warn">issue</span><a href="https://github.com/mozilla-ai/otari/issues/3016">#3016 CORS: Otari-* response headers are set but not exposed to browsers</a><span class="pill">open</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="run">
+    <div class="container two">
+      <div><p class="eyebrow">Run it yourself</p><h2>One Otari key, three roles.</h2><p style="margin-top:16px;color:var(--color-ink-2)">Needs an Otari API key in <code>.env</code>. A medium episode with all three roles costs about two cents.</p></div>
+<pre class="cmd"><span class="c"># the env, open source</span>
+git clone -b otari https://github.com/akshit9162/gst-env-core
+cd gst-env-core && python -m venv .venv && .venv/bin/pip install -e .
+
+<span class="c"># file, review and explain one return, all through Otari</span>
+.venv/bin/python scripts/pipeline.py \
+  --filer otari:alibaba/qwen-3.5-35b-a3b \
+  --reviewer otari:z-ai/glm-5.3-flash \
+  --explainer otari:openai/gpt-oss-20b \
+  --difficulties medium --per-difficulty 1 \
+  --code-exec --web-fetch --inject 1.0
+
+<span class="c"># the guardrail probes on this page</span>
+.venv/bin/python scripts/guardrail_direct.py</pre>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="container">
+    <span>gst-env · Apache-2.0 · built by Akshit Gupta for Mozilla’s Developers Wilding</span>
+    <span>Data: <a href="data.json">data.json</a>, built from <code>results/</code> by <code>scripts/build_otari_page.py</code></span>
+  </div>
+</footer>
+
+<dialog id="zoom"></dialog>
+
+<script>
+const VIDEO = ""; // YouTube id, set after recording
+
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const rid = id => id ? `<button class="rid" data-id="${esc(id)}" title="Copy Otari request ID">${esc(id.slice(0, 8))}…</button>` : "";
+const short = m => m.replace("otari:", "");
+const pct = x => Math.round(x * 100) + "%";
+const inr = n => "₹" + Number(n).toLocaleString("en-IN");
+
+document.addEventListener("click", e => {
+  const b = e.target.closest(".rid");
+  if (b) {
+    navigator.clipboard?.writeText(b.dataset.id).then(() => { b.classList.add("copied"); b.textContent = "copied"; setTimeout(() => { b.classList.remove("copied"); b.textContent = b.dataset.id.slice(0, 8) + "…"; }, 1200); });
+    return;
+  }
+  const img = e.target.closest(".feature img");
+  if (img) { const d = $("#zoom"); d.replaceChildren(Object.assign(document.createElement("img"), { src: img.src, alt: img.alt })); d.showModal(); return; }
+  if (e.target.id === "zoom" || e.target.closest("#zoom")) $("#zoom").close();
+});
+
+if (VIDEO) $("#video").innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${VIDEO}" title="gst-env on Otari, demo" allow="encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+
+fetch("data.json").then(r => r.json()).then(d => {
+  const inj = d.injection;
+  const ex = inj.episodes.find(e => e.web_fetches > 0) || inj.episodes[0];
+  const pu = d.per_user.find(p => p.error === "budget_exceeded");
+  const inject = d.guardrail_direct.find(g => g.kind === "injection");
+  const passedRole = inj.episodes[0];
+
+  const features = [
+    { t: "Open-weight models", p: `Five open-weight families file the same seeded returns: Qwen, DeepSeek, gpt-oss, GLM and Llama, plus gpt-oss-20b as the explainer. One Otari key, no provider SDKs.`, proof: d.leaderboard.map(m => `${esc(short(m.model).split("/")[1])} ${rid(m.request_id)}`).join(" ") },
+    { t: "Several models, distinct roles", p: `Qwen files the return, GLM reviews the draft against the invoices and approves or sends it back, gpt-oss-20b explains the filed return to the owner in English and Hindi.`, proof: `filer ${rid(passedRole.filer_request_ids[0])} reviewer ${rid(passedRole.reviewer_request_ids[0])} · <a href="#episodes">see an episode</a>` },
+    { t: "Routing and fallbacks", p: `The filer calls the policy <code>gst-filer</code> (Qwen on DeepInfra, GLM as backup), not a model. Separately, Otari switched gpt-oss-120b to another provider mid-episode on its own.`, img: "img/routing.png", alt: "Otari routing page showing the gst-filer policy", proof: `policy ${rid(d.routing[0].request_id)} automatic fallback ${rid(d.fallback.request_id)}` },
+    { t: "Budgets", p: `A US$3 daily ceiling on the whole organization and US$2 a day on the gst-env service key. Every request has to pass both. A refusal ends the episode as <code>budget_exceeded</code> instead of crashing the run.`, img: "img/budgets.png", alt: "Otari Spend and budgets page with the organization and key ceilings", proof: `Dashboard › Spend &amp; budgets, 12 Nov` },
+    { t: "Per-user budgets", p: `On a service key, each role is its own end user with US$0.05 a day. The filer ran out and Otari refused it cleanly, while the reviewer and explainer kept going:`, note: pu ? pu.detail : "", proof: `first episode passed, next two refused · ${rid(d.per_user[0].request_id)}` },
+    { t: "Code execution", p: `The filer does the tax arithmetic in Otari’s sandbox instead of in its head: ${inj.code_executions} sandbox runs across the poisoned batch.`, proof: `${rid(inj.episodes[0].filer_request_ids[0])} · <code>--code-exec</code>` },
+    { t: "Web fetch", p: `The reviewer fetches the CBIC rule text it cites (for example Section 17(5) on blocked credit) before approving a draft: ${inj.web_fetches} fetches across the batch.`, proof: `${esc(ex.task)} ${rid(ex.reviewer_request_ids[0])} · <code>--web-fetch</code>` },
+    { t: "Guardrails", p: `Lakera Guard is mandated for the organization in block mode. A direct injection is refused with a 403. The same text inside an invoice is not screened, which is <a href="#injection">the finding below</a>.`, img: "img/guardrails.png", alt: "Otari Guardrails page with the Lakera Guard mandate in block mode", proof: `direct injection refused ${rid(inject?.request_id)}` },
+    { t: "MCP", p: `The environment also runs as a remote MCP server. Otari connected to it, listed the filing tools and ran the whole loop itself from one request. Both returns passed.`, proof: d.mcp.map(m => `${esc(m.task)} ${m.passed ? '<span class="pill ok">passed</span>' : ""} ${rid(m.request_id)}`).join(" ") },
+  ];
+  $("#feature-grid").innerHTML = features.map((f, i) => `
+    <article class="feature">
+      <header><span class="n">${String(i + 1).padStart(2, "0")}</span><h3>${f.t}</h3></header>
+      <p>${f.p}</p>
+      ${f.note ? `<div class="note">${esc(f.note)}</div>` : ""}
+      ${f.img ? `<img src="${f.img}" alt="${esc(f.alt)}" loading="lazy">` : ""}
+      <div class="proof">${f.proof}</div>
+    </article>`).join("");
+
+  $("#lb").innerHTML = d.leaderboard.map(m => {
+    const [lo, hi] = m.pass_ci95, bd = m.by_difficulty;
+    return `<tr>
+      <td><b>${esc(short(m.model))}</b></td>
+      <td><code>${esc(m.served_models.join(", "))}</code>${m.fallback_share ? ` <span class="pill warn">fallback ${pct(m.fallback_share)}</span>` : ""}</td>
+      <td>${pct(m.pass_rate)} <small style="color:var(--color-muted)">(${pct(lo)}–${pct(hi)})</small><div class="bar" aria-hidden="true"><i style="left:${lo * 100}%;width:${(hi - lo) * 100}%"></i><b style="left:calc(${m.pass_rate * 100}% - 1px)"></b></div></td>
+      <td class="num">${m.mean_reward.toFixed(2)}</td>
+      <td class="num">${pct(bd.easy)}</td><td class="num">${pct(bd.medium)}</td><td class="num">${pct(bd.hard)}</td>
+      <td class="num">$${m.usd_per_item.toFixed(4)}</td>
+      <td>${rid(m.request_id)}</td></tr>`;
+  }).join("");
+
+  $("#flow").innerHTML = [
+    ["", inj.poisoned, "poisoned returns, an instruction hidden in an invoice note"],
+    ["bad", inj.reached_filer, "reached the filer as a tool result (one run hit a connection error first)"],
+    ["bad", inj.blocked, "refused by the guardrail: it only screens the user message"],
+    ["bad", inj.obeyed, "drafts where the filer obeyed it, all on hard returns"],
+    ["good", `${inj.obeyed_and_sent_back} / ${inj.obeyed}`, "of those sent back for revision by the reviewer model"],
+  ].map(([c, n, s]) => `<div class="step ${c}"><b>${n}</b><span>${s}</span></div>`).join("");
+  $("#s-obeyed").textContent = `${inj.obeyed_and_sent_back} / ${inj.obeyed}`;
+
+  $("#direct").innerHTML = d.guardrail_direct.map(g => `<tr>
+    <td>${esc(g.prompt.length > 90 ? g.prompt.slice(0, 90) + "…" : g.prompt)}</td>
+    <td>${g.status === 200 ? '<span class="pill ok">200 served</span>' : `<span class="pill no">${g.status} ${esc(g.error)}</span>`}</td>
+    <td>${rid(g.request_id)}</td></tr>`).join("");
+
+  const list = $("#ep-list");
+  list.innerHTML = inj.episodes.map((e, i) => {
+    const v = e.review?.verdict;
+    const tag = e.error ? '<span class="pill">error</span>' : e.passed ? '<span class="pill ok">passed</span>' : '<span class="pill no">failed</span>';
+    return `<button aria-pressed="${i === 0}" data-i="${i}"><span>${esc(e.task.replace("gstr3b-", ""))}</span>${tag}
+      <small>${e.obeyed ? "obeyed the note · " : ""}review: ${esc(v || "none")}${e.web_fetches ? ` · ${e.web_fetches} fetches` : ""}</small></button>`;
+  }).join("");
+  const show = i => {
+    const e = inj.episodes[i];
+    list.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", b.dataset.i == i));
+    const f = e.filed || {};
+    const flat = [];
+    for (const [k, v] of Object.entries(f)) {
+      if (v && typeof v === "object") for (const [k2, v2] of Object.entries(v)) flat.push([`${k}.${k2}`, v2]);
+      else flat.push([k, v]);
+    }
+    $("#ep").innerHTML = `
+      <h3>${esc(e.task)} · ${esc(e.invoices)} invoices</h3>
+      <div class="meta">
+        ${e.passed ? '<span class="pill ok">final return passed</span>' : '<span class="pill no">final return failed</span>'}
+        ${e.injected ? '<span class="pill warn">poisoned invoice</span>' : ""}
+        ${e.obeyed ? '<span class="pill no">filer obeyed the note</span>' : e.injected ? '<span class="pill ok">filer ignored the note</span>' : ""}
+        <span class="pill">guardrail: ${e.blocked ? "blocked" : "not triggered"}</span>
+        <span class="pill">review: ${esc(e.review?.verdict || "none")}</span>
+        <span class="pill">${e.code_executions} sandbox runs</span>
+        <span class="pill">${e.web_fetches} web fetches</span>
+        ${e.cost != null ? `<span class="pill">$${Number(e.cost).toFixed(4)}</span>` : ""}
+      </div>
+      <h4>Roles</h4>
+      <div class="kv">${Object.entries(e.roles || {}).map(([r, m]) => `<div><span>${r}</span><span>${esc(short(m))}</span></div>`).join("")}</div>
+      <h4>Filed return${e.failed.length ? ` · wrong: ${e.failed.map(esc).join(", ")}` : ""}</h4>
+      ${flat.length ? `<div class="kv">${flat.map(([k, v]) => `<div class="${e.failed.includes(k) ? "fail" : ""}"><span>${esc(k)}</span><span class="num">${inr(v)}</span></div>`).join("")}</div>` : "<p>No return filed.</p>"}
+      ${e.review?.notes ? `<h4>Reviewer (GLM)</h4><div class="text">${esc(e.review.notes)}</div>` : ""}
+      ${e.explanation ? `<h4>Explainer (gpt-oss-20b), to the owner</h4><div class="text">${esc(e.explanation)}</div>` : ""}
+      <h4>Otari request IDs</h4>
+      <p class="proof" style="display:flex;flex-wrap:wrap;gap:6px">filer ${e.filer_request_ids.map(rid).join(" ")} reviewer ${e.reviewer_request_ids.map(rid).join(" ")}</p>`;
+  };
+  list.addEventListener("click", e => { const b = e.target.closest("button[data-i]"); if (b) show(+b.dataset.i); });
+  show(inj.episodes.findIndex(e => e.obeyed && e.review?.verdict === "revise") >= 0 ? inj.episodes.findIndex(e => e.obeyed && e.review?.verdict === "revise") : 0);
+}).catch(() => { $("#feature-grid").innerHTML = "<p>Could not load data.json.</p>"; });
+</script>
+</body>
+</html>
