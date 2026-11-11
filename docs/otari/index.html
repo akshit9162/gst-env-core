@@ -427,8 +427,10 @@ function liveResult(r) {
   if (!LIVE_API) { go.disabled = true; st.textContent = "The live server is being deployed. The recorded runs below show the same pipeline."; return; }
   go.addEventListener("click", async () => {
     go.disabled = true; out.innerHTML = ""; st.textContent = "starting…";
+    const wake = setTimeout(() => { st.textContent = "waking the free server, up to a minute…"; }, 5000);
     try {
       const r = await fetch(LIVE_API + "/api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ difficulty: $("#live-diff").value, poison: $("#live-poison").checked }) });
+      clearTimeout(wake);
       const j = await r.json();
       if (!r.ok) throw new Error(j.detail || r.status);
       let shown = false;
