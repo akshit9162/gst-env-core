@@ -97,6 +97,14 @@
   .contrib li a { text-decoration: none; } .contrib li a:hover { text-decoration: underline; }
   pre.cmd { background: var(--color-ink); color: var(--color-paper); border-radius: var(--radius-card); padding: var(--space-lg); overflow-x: auto; font-family: var(--mono); font-size: var(--text-sm); line-height: 1.7; margin: 0; }
   pre.cmd .c { color: color-mix(in oklab, var(--color-paper) 55%, transparent); }
+  .live-controls { display: flex; flex-wrap: wrap; gap: var(--space-md); align-items: center; padding: var(--space-lg); background: var(--color-paper-2); border: var(--rule-hair) solid var(--color-rule); border-radius: var(--radius-card); }
+  .live-controls label { display: inline-flex; gap: 8px; align-items: center; font-size: var(--text-sm); }
+  .live-controls select { padding: 6px 10px; border-radius: 6px; border: 1px solid var(--color-rule); background: var(--color-paper); }
+  .live-status { font-family: var(--mono); font-size: var(--text-sm); color: var(--color-muted); }
+  #live-out { margin-top: var(--space-lg); display: grid; gap: var(--space-lg); }
+  #live-out .ep { padding: var(--space-lg); }
+  .inv td.note { max-width: 46ch; font-size: var(--text-xs); color: var(--color-ink-2); }
+  .cmp td.bad { color: var(--color-error); font-weight: 500; }
   footer { padding-block: var(--space-2xl); font-size: var(--text-sm); color: var(--color-muted); }
   footer .container { display: flex; flex-wrap: wrap; gap: var(--space-lg); justify-content: space-between; }
   dialog { border: 0; padding: 0; background: transparent; max-width: min(1400px, 96vw); }
@@ -123,6 +131,7 @@
   <div class="container">
     <a class="wordmark" href="../">gst-env <span>on Otari</span></a>
     <ul>
+      <li><a href="#live">Live</a></li>
       <li><a href="#features">Features</a></li>
       <li><a href="#leaderboard">Leaderboard</a></li>
       <li><a href="#injection">Injection</a></li>
@@ -136,15 +145,16 @@
 <main id="main">
   <section class="hero">
     <div class="container">
-      <h1>Open-weight models file India’s GST return, through Otari.</h1>
-      <p class="lead">gst-env is an RL environment for GSTR-3B, the monthly return every Indian business files. Models read invoices through tools and file the return; a deterministic solver grades every field against the law. Every model call on this page went through Mozilla’s Otari gateway, and every claim has an Otari request ID you can look up. Built for Mozilla’s Developers Wilding hackathon.</p>
+      <h1>A small business’s monthly GST return, filed by open-weight models through Otari.</h1>
+      <p class="lead">Every month, millions of Indian businesses file GSTR-3B: what they sold, the tax they collected, the credit they can claim, and the cash they owe. Here the invoices go in, Qwen files the return, GLM checks it against the invoices, and gpt-oss explains it to the owner in English and Hindi. A guard model and Otari’s guardrail screen every invoice note first, and a deterministic solver grades all 13 fields against the law. Every call goes through Mozilla’s Otari gateway, and every claim below has an Otari request ID. Built for Mozilla’s Developers Wilding hackathon.</p>
       <div class="actions">
-        <a class="btn btn--accent" href="#features">See each feature, with proof</a>
+        <a class="btn btn--accent" href="#live">File a return live</a>
+        <a class="btn btn--ghost" href="#features">Each feature, with proof</a>
         <a class="btn btn--ghost" href="https://github.com/akshit9162/gst-env-core/blob/otari/EVIDENCE.md">EVIDENCE.md</a>
         <a class="btn btn--ghost" href="https://github.com/akshit9162/gst-env-core/tree/otari">Code (Apache-2.0)</a>
       </div>
       <div class="stats" id="stats">
-        <div class="stat"><b>6</b><span>open-weight models, from five families, behind one Otari key</span></div>
+        <div class="stat"><b>8</b><span>open-weight models, two of them guard models, behind one Otari key</span></div>
         <div class="stat"><b>8 / 8</b><span>Otari features used for real work, each with a request ID</span></div>
         <div class="stat"><b id="s-obeyed">4 / 4</b><span>poisoned drafts the reviewer model sent back, after the guardrail let them through</span></div>
         <div class="stat"><b>2</b><span>merged PRs on mozilla-ai/otari, plus 6 issues filed</span></div>
@@ -159,6 +169,23 @@
         <p>My own screen and voice. Each feature card below names the second it appears.</p>
       </div>
       <div class="video" id="video"><p>Demo video coming here.</p></div>
+    </div>
+  </section>
+
+
+  <section id="live">
+    <div class="container">
+      <div class="head">
+        <div><p class="eyebrow">Run it live</p><h2>File a return now, on a task nobody has seen.</h2></div>
+        <p>Press the button and the server generates a fresh business month, screens every invoice note, then files, reviews and explains the return through Otari. It takes two to five minutes. You see the grade against the solver and every request ID.</p>
+      </div>
+      <div class="live-controls">
+        <label><input type="checkbox" id="live-poison" checked> Hide a prompt injection in one invoice note</label>
+        <label>Difficulty <select id="live-diff"><option value="easy">easy</option><option value="medium">medium</option></select></label>
+        <button class="btn btn--accent" id="live-go">File a return live</button>
+        <span class="live-status" id="live-status" aria-live="polite"></span>
+      </div>
+      <div id="live-out"></div>
     </div>
   </section>
 
@@ -388,6 +415,50 @@ fetch("data.json").then(r => r.json()).then(d => {
   list.addEventListener("click", e => { const b = e.target.closest("button[data-i]"); if (b) show(+b.dataset.i); });
   show(inj.episodes.findIndex(e => e.obeyed && e.review?.verdict === "revise") >= 0 ? inj.episodes.findIndex(e => e.obeyed && e.review?.verdict === "revise") : 0);
 }).catch(() => { $("#feature-grid").innerHTML = "<p>Could not load data.json.</p>"; });
+
+// ---- Run it live -------------------------------------------------------
+const LIVE_API = new URLSearchParams(location.search).get("api") || ""; // the Render URL, set after deploy
+const flatten = o => Object.entries(o || {}).flatMap(([k, v]) => v && typeof v === "object" ? Object.entries(v).map(([k2, v2]) => [`${k}.${k2}`, v2]) : [[k, v]]);
+const liveInvoices = (invs, screened) => `<table class="inv"><thead><tr><th>Invoice</th><th>Kind</th><th class="num">Taxable</th><th>Rate</th>${screened ? "<th>Note</th><th>Screen</th>" : ""}</tr></thead><tbody>${invs.map(i => `<tr>
+  <td><code>${esc(i.invoice_id)}</code></td><td>${esc(i.kind)}${i.reverse_charge ? " · RCM" : ""}</td><td class="num">${inr(i.taxable_value)}</td><td>${esc(i.rate)}%</td>
+  ${screened ? `<td class="note">${esc(i.note || "")}</td><td>${i.flagged_by ? `<span class="pill no">withheld: ${esc(i.flagged_by)}</span>` : i.note ? '<span class="pill ok">passed</span>' : ""} ${rid(i.screen_request_id)}</td>` : ""}</tr>`).join("")}</tbody></table>`;
+function liveResult(r) {
+  const filed = Object.fromEntries(flatten(r.filed)), rows = flatten(r.correct).filter(([k]) => !k.startsWith("cash_payable.")); // the 13 graded fields; the split of cash payable is derived
+  const ids = [...(r.filer?.request_ids || []).map(id => "filer " + rid(id)), ...(r.reviewer || []).flatMap(x => (x.request_ids || []).map(id => "reviewer " + rid(id)))];
+  return `<article class="ep">
+    <h3>${esc(r.task_id)} · ${r.invoices.length} invoices · ${r.seconds}s · $${Number(r.cost_usd || 0).toFixed(4)}</h3>
+    <p>${r.passed ? '<span class="pill ok">return correct</span>' : `<span class="pill no">${r.failed_fields.length} fields wrong</span>`}
+      ${r.poisoned ? (r.injection_withheld ? '<span class="pill ok">injection withheld before the filer saw it</span>' : r.obeyed_injection ? '<span class="pill warn">filer obeyed the note</span>' : '<span class="pill">injection reached the filer, ignored</span>') : ""}
+      <span class="pill">review: ${esc(r.review?.verdict || "none")}</span></p>
+    <h4>Invoices, as the models saw them</h4>${liveInvoices(r.invoices, true)}
+    <h4>Filed by Qwen vs the solver</h4>
+    <table class="cmp"><thead><tr><th>Field</th><th class="num">Filed</th><th class="num">Correct</th></tr></thead><tbody>${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td class="num ${filed[k] !== v ? "bad" : ""}">${filed[k] === undefined ? "–" : inr(filed[k])}</td><td class="num">${inr(v)}</td></tr>`).join("")}</tbody></table>
+    ${r.review?.notes ? `<h4>Reviewer (GLM)</h4><div class="text">${esc(r.review.notes)}</div>` : ""}
+    ${r.explanation ? `<h4>Explainer (gpt-oss-20b), to the owner</h4><div class="text">${esc(r.explanation)}</div>` : ""}
+    <h4>Otari request IDs</h4><p class="proof" style="display:flex;flex-wrap:wrap;gap:6px">${ids.join(" ")}</p></article>`;
+}
+(() => {
+  const go = $("#live-go"), st = $("#live-status"), out = $("#live-out");
+  if (!LIVE_API) { go.disabled = true; st.textContent = "The live server is being deployed. The recorded runs below show the same pipeline."; return; }
+  go.addEventListener("click", async () => {
+    go.disabled = true; out.innerHTML = ""; st.textContent = "starting…";
+    try {
+      const r = await fetch(LIVE_API + "/api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ difficulty: $("#live-diff").value, poison: $("#live-poison").checked }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail || r.status);
+      let shown = false;
+      for (;;) {
+        await new Promise(res => setTimeout(res, 4000));
+        const s = await (await fetch(`${LIVE_API}/api/jobs/${j.job}`)).json();
+        if (s.task && !shown) { shown = true; out.innerHTML = `<article class="ep"><h3>${esc(s.task.task_id)} · GSTIN ${esc(s.task.gstin)} · ${esc(s.task.period)}</h3><h4>This month’s invoices (the notes are screened before the filer sees them)</h4>${liveInvoices(s.task.invoices, false)}</article>`; }
+        if (s.status === "done") { out.innerHTML = liveResult(s.result); st.textContent = "done"; break; }
+        if (s.status === "error") throw new Error(s.error);
+        st.textContent = `screening, filing, reviewing… ${Math.round(s.elapsed)}s (typically 2–5 min)`;
+      }
+    } catch (e) { st.textContent = "Run failed: " + e.message; }
+    go.disabled = false;
+  });
+})();
 </script>
 </body>
 </html>
