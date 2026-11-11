@@ -1,5 +1,7 @@
 # Otari evidence
 
+Browse it as a page: **https://akshit9162.github.io/gst-env-core/otari/**
+
 Every row below is a real request through hosted Otari (EU), 6 to 8 Nov 2026. Each `Otari-Request-ID` was read from the response headers and saved with the episode, so you can look it up on your side. The full rows are in [`results/`](results/); the file and task are given for each.
 
 | Otari feature | What happened | Evidence (file, task) | Otari-Request-ID | In the video |
