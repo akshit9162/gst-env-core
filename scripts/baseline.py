@@ -419,10 +419,19 @@ def collect_stream(parsed):
     return NS(choices=choices, usage=usage, otari_tool_calls=list(ran.values()))
 
 
+RETRYABLE_STOPS = ("timeout", "connection_error", "stream_error", "upstream_rate_limited", "api_error_429")
+# Out of money: not the model's failure, and retrying will not help.
+UNFUNDED_STOPS = ("insufficient_funds", "budget_exceeded")
+
+
+def retryable_stop(stop: str | None) -> bool:
+    """Gateway failures that come and go: timeouts, resets, 5xx, upstream rate limits."""
+    return stop in RETRYABLE_STOPS or bool(stop and stop.startswith("api_error_5"))
+
+
 def infra_stop(stop: str | None) -> bool:
-    """Stops caused by the gateway, not the model: timeouts, resets, 5xx, upstream rate limits."""
-    return stop in ("timeout", "connection_error", "upstream_rate_limited", "api_error_429") or \
-        bool(stop and stop.startswith("api_error_5"))
+    """Stops that are not the model's doing, so the attempt is left out of pass@k."""
+    return retryable_stop(stop) or stop in UNFUNDED_STOPS
 
 
 class OtariAgent:
@@ -435,7 +444,8 @@ class OtariAgent:
     def __init__(self, model: str, tools: list = TOOLS, user: str | None = None,
                  guardrails: list[str] | None = None, code_exec: bool = False, web_fetch: bool = False):
         self.client = openai.OpenAI(base_url=os.environ.get("OTARI_BASE_URL", OTARI_BASE_URL),
-                                    api_key=os.environ.get("OTARI_API_KEY"))
+                                    api_key=os.environ.get("OTARI_API_KEY"),
+                                    timeout=180, max_retries=0)  # turn() retries; a hung stream must not hold a worker 10 min
         self.model = otari_model(model)
         self.tools = [
             {"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["input_schema"]}}
@@ -462,9 +472,19 @@ class OtariAgent:
     def turn(self, messages: list) -> Turn:
         for attempt in range(self.RETRIES + 1):
             t = self._turn(messages)
-            if not infra_stop(t.stop) or attempt == self.RETRIES:
+            if not retryable_stop(t.stop) or attempt == self.RETRIES:
                 return t
             time.sleep(self.RETRY_WAIT * 2 ** attempt)
+
+    def _cache_marked(self, messages: list) -> list:
+        """Claude models cache only what is marked: the system message, plus a breakpoint on the
+        newest message that moves forward each turn. Otari passes cache_control through to Anthropic.
+        Copies, so the stored history never collects stale breakpoints (Anthropic allows four)."""
+        if not self.model.startswith("anthropic/"):
+            return messages
+        last = len(messages) - 1
+        return [{**m, "cache_control": {"type": "ephemeral"}} if i in (0, last) else m
+                for i, m in enumerate(messages)]
 
     def _turn(self, messages: list) -> Turn:
         try:
@@ -472,7 +492,7 @@ class OtariAgent:
             # (mozilla-ai/otari#2692), and a hard task's turn with code execution runs longer.
             raw = self.client.chat.completions.with_raw_response.create(
                 model=self.model,
-                messages=messages,
+                messages=self._cache_marked(messages),
                 tools=self.tools,
                 tool_choice="auto",
                 max_tokens=self.max_tokens,
@@ -489,6 +509,8 @@ class OtariAgent:
         except openai.APIConnectionError as e:  # includes timeouts; one stuck request must not end a batch
             kind = "timeout" if isinstance(e, openai.APITimeoutError) else "connection_error"
             return Turn([], kind, 0, 0, fatal=True, gateway={"error_code": kind})
+        except openai.APIError as e:  # an error event inside the stream, e.g. "LLM provider timeout"
+            return Turn([], "stream_error", 0, 0, fatal=True, gateway={"error_code": "stream_error", "detail": str(e)})
         gateway = {h: raw.headers[h] for h in OTARI_HEADERS if h in raw.headers}
         # Otari's own tools (sandbox, fetch) run inside the request and are reported here
         ran = getattr(r, "otari_tool_calls", None) or []
@@ -620,6 +642,11 @@ def make_session(task):
     return CycleSession(task) if isinstance(task, CycleTask) else FilingSession(task)
 
 
+def repeat_tasks(tasks: list, k: int) -> list:
+    """Every task once, then every task again: a run cut short by money still covers each task."""
+    return [t for _ in range(k) for t in tasks]
+
+
 def run_episode(agent, model: str, effort: str, task, max_turns: int, session=None) -> dict:
     session = session or make_session(task)
     messages = agent.start(session.instructions())
@@ -747,7 +774,7 @@ def summarize_samples(rows: list[dict], difficulties: list[str], k: int) -> None
     lost = sum(bool(r.get("infra_error")) for r in rows)
     rows = [r for r in rows if not r.get("infra_error")]
     if lost:
-        print(f"  {lost} attempts lost to gateway errors, left out of pass@k")
+        print(f"  {lost} attempts lost to gateway errors or exhausted credit, left out of pass@k")
     for d in difficulties:
         by_task: dict[str, list[bool]] = {}
         for r in rows:
@@ -832,7 +859,7 @@ def main() -> None:
             for d in args.difficulties
             for i in range(args.per_difficulty)
         ]
-    tasks = [t for t in tasks for _ in range(args.samples)]
+    tasks = repeat_tasks(tasks, args.samples)
     if args.dry_run:
         dry_run(args, tasks)
         return
@@ -868,7 +895,7 @@ def main() -> None:
                   f"calls={row['tool_calls']:<3} ${row['cost_usd']:.3f}  missed={row['failed_fields']}")
 
     print("\nsummary")
-    summarize(rows, args.difficulties)
+    summarize([r for r in rows if not r.get("infra_error")], args.difficulties)
     if args.samples > 1:
         summarize_samples(rows, args.difficulties, args.samples)
     if skipped:

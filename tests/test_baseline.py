@@ -333,7 +333,7 @@ def test_otari_retries_a_502_then_carries_on(monkeypatch):
     assert row["passed"] and not row["infra_error"]
 
 
-def test_budget_refusal_is_not_retried_or_called_infra(monkeypatch):
+def test_budget_refusal_is_not_retried_and_not_scored(monkeypatch):
     import httpx
     import openai
 
@@ -344,7 +344,7 @@ def test_budget_refusal_is_not_retried_or_called_infra(monkeypatch):
     sent = []
     agent.client = _otari_client([openai.PermissionDeniedError("budget", response=response, body=None)], sent)
     row = baseline.run_episode(agent, "otari:gst-filer", "high", generate_task(4, "easy"), max_turns=5)
-    assert len(sent) == 1 and not row["infra_error"]
+    assert len(sent) == 1 and row["infra_error"]  # the budget stopped it, not the model
 
 
 def test_summarize_samples_leaves_out_infra_failures(capsys):
@@ -354,3 +354,79 @@ def test_summarize_samples_leaves_out_infra_failures(capsys):
     baseline.summarize_samples(rows, ["cycle"], 2)
     out = capsys.readouterr().out
     assert "pass@1=100%" in out and "over 1 tasks" in out and "2 attempts lost to gateway errors" in out
+
+
+def test_otari_error_inside_the_stream_is_retried(monkeypatch):
+    import json
+    from types import SimpleNamespace as NS
+
+    import httpx
+    import openai
+
+    monkeypatch.setenv("OTARI_API_KEY", "test")
+    monkeypatch.setattr(baseline.OtariAgent, "RETRY_WAIT", 0)
+    task = generate_task(3, "easy")
+    agent = baseline.make_agent("otari:xai/grok-4.7", "high")
+    req = httpx.Request("POST", "https://api.otari.ai/api/v1/chat/completions")
+
+    def broken():
+        raise openai.APIError("LLM provider timeout", request=req, body=None)
+        yield
+
+    good = _completion([("submit_return", json.dumps({"gstr3b": solve(task)}))], 0.001)
+    replies = [NS(headers={}, parse=broken), NS(headers={}, parse=lambda: good)]
+    agent.client = NS(chat=NS(completions=NS(with_raw_response=NS(create=lambda **kw: replies.pop(0)))))
+    monkeypatch.setattr(baseline, "collect_stream", lambda parsed: parsed if isinstance(parsed, NS) else list(parsed))
+    row = baseline.run_episode(agent, "otari:xai/grok-4.7", "high", task, max_turns=3)
+    assert row["passed"] and not row["infra_error"]
+
+
+def test_otari_marks_the_cache_prefix_for_claude_models(monkeypatch):
+    import json
+
+    monkeypatch.setenv("OTARI_API_KEY", "test")
+    task = generate_task(3, "easy")
+    agent = baseline.make_agent("otari:anthropic/claude-fable-5", "high")
+    sent = []
+    agent.client = _otari_client([
+        ({}, _completion([("list_invoices", '{"kind": "sale", "page": 1}')], 0.01)),
+        ({}, _completion([("submit_return", json.dumps({"gstr3b": solve(task)}))], 0.01)),
+    ], sent)
+    baseline.run_episode(agent, "otari:anthropic/claude-fable-5", "high", task, max_turns=3)
+
+    marked = [[i for i, m in enumerate(req["messages"]) if "cache_control" in m] for req in sent]
+    # system message, plus a breakpoint that moves to the newest message each turn
+    assert marked == [[0, 1], [0, len(sent[1]["messages"]) - 1]]
+    assert sent[1]["messages"][0]["cache_control"] == {"type": "ephemeral"}
+
+
+def test_otari_leaves_other_models_unmarked(monkeypatch):
+    import json
+
+    monkeypatch.setenv("OTARI_API_KEY", "test")
+    task = generate_task(3, "easy")
+    agent = baseline.make_agent("otari:xai/grok-4.7", "high")
+    sent = []
+    agent.client = _otari_client([({}, _completion([("submit_return", json.dumps({"gstr3b": solve(task)}))], 0.01))], sent)
+    baseline.run_episode(agent, "otari:xai/grok-4.7", "high", task, max_turns=2)
+    assert all("cache_control" not in m for m in sent[0]["messages"])
+
+
+def test_running_out_of_funds_is_not_scored_as_a_model_failure(monkeypatch):
+    import httpx
+    import openai
+
+    monkeypatch.setenv("OTARI_API_KEY", "test")
+    agent = baseline.make_agent("otari:anthropic/claude-fable-5", "high")
+    response = httpx.Response(402, headers={"Otari-Error-Code": "insufficient_funds"},
+                              request=httpx.Request("POST", "https://api.otari.ai/api/v1/chat/completions"))
+    sent = []
+    agent.client = _otari_client([openai.APIStatusError("no funds", response=response, body=None)], sent)
+    row = baseline.run_episode(agent, "otari:anthropic/claude-fable-5", "high", generate_task(4, "easy"), max_turns=5)
+    assert len(sent) == 1  # not retried
+    assert row["stop_reason"] == "insufficient_funds" and row["infra_error"]
+
+
+def test_samples_run_round_robin_so_a_short_run_covers_every_task():
+    tasks = ["a", "b", "c"]
+    assert baseline.repeat_tasks(tasks, 2) == ["a", "b", "c", "a", "b", "c"]
