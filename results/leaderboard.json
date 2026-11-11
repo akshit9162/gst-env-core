@@ -1,0 +1,153 @@
+[
+ {
+  "model": "otari:alibaba/qwen-3.5-35b-a3b",
+  "n": 6,
+  "pass_rate": 0.5,
+  "pass_ci95": [
+   0.188,
+   0.812
+  ],
+  "mean_reward": 0.514,
+  "by_difficulty": {
+   "easy": 1.0,
+   "hard": 0.0,
+   "medium": 0.5
+  },
+  "cost_usd": 0.0684,
+  "usd_per_item": 0.0114,
+  "usd_per_pass": 0.0228,
+  "fallback_share": 0.0,
+  "code_executions": 0,
+  "web_fetches": 0,
+  "served_models": [
+   "Qwen/Qwen3.5-35B-A3B"
+  ],
+  "budget_stops": 0,
+  "poisoned": 0,
+  "obeyed_injection": null,
+  "guardrail_blocked": null,
+  "review_rescued": 0,
+  "review_broke": 0
+ },
+ {
+  "model": "otari:deepseek/deepseek-v4.1-flash",
+  "n": 6,
+  "pass_rate": 0.333,
+  "pass_ci95": [
+   0.097,
+   0.7
+  ],
+  "mean_reward": 0.72,
+  "by_difficulty": {
+   "easy": 0.5,
+   "hard": 0.0,
+   "medium": 0.5
+  },
+  "cost_usd": 0.0115,
+  "usd_per_item": 0.0019,
+  "usd_per_pass": 0.0057,
+  "fallback_share": 0.0,
+  "code_executions": 0,
+  "web_fetches": 0,
+  "served_models": [
+   "deepseek-ai/DeepSeek-V4.1-Flash"
+  ],
+  "budget_stops": 0,
+  "poisoned": 0,
+  "obeyed_injection": null,
+  "guardrail_blocked": null,
+  "review_rescued": 0,
+  "review_broke": 0
+ },
+ {
+  "model": "otari:openai/gpt-oss-120b",
+  "n": 6,
+  "pass_rate": 0.333,
+  "pass_ci95": [
+   0.097,
+   0.7
+  ],
+  "mean_reward": 0.431,
+  "by_difficulty": {
+   "easy": 0.5,
+   "hard": 0.0,
+   "medium": 0.5
+  },
+  "cost_usd": 0.0177,
+  "usd_per_item": 0.0029,
+  "usd_per_pass": 0.0089,
+  "fallback_share": 0.667,
+  "code_executions": 0,
+  "web_fetches": 0,
+  "served_models": [
+   "gpt-oss-120b",
+   "openai/gpt-oss-120b"
+  ],
+  "budget_stops": 0,
+  "poisoned": 0,
+  "obeyed_injection": null,
+  "guardrail_blocked": null,
+  "review_rescued": 0,
+  "review_broke": 0
+ },
+ {
+  "model": "otari:z-ai/glm-5.3-flash",
+  "n": 6,
+  "pass_rate": 0.167,
+  "pass_ci95": [
+   0.03,
+   0.564
+  ],
+  "mean_reward": 0.513,
+  "by_difficulty": {
+   "easy": 0.5,
+   "hard": 0.0,
+   "medium": 0.0
+  },
+  "cost_usd": 0.0126,
+  "usd_per_item": 0.0021,
+  "usd_per_pass": 0.0126,
+  "fallback_share": 0.0,
+  "code_executions": 0,
+  "web_fetches": 0,
+  "served_models": [
+   "zai-org/GLM-5.3-Flash"
+  ],
+  "budget_stops": 0,
+  "poisoned": 0,
+  "obeyed_injection": null,
+  "guardrail_blocked": null,
+  "review_rescued": 0,
+  "review_broke": 0
+ },
+ {
+  "model": "otari:meta/llama-3.3-70b-instruct",
+  "n": 6,
+  "pass_rate": 0.0,
+  "pass_ci95": [
+   0.0,
+   0.39
+  ],
+  "mean_reward": 0.0,
+  "by_difficulty": {
+   "easy": 0.0,
+   "hard": 0.0,
+   "medium": 0.0
+  },
+  "cost_usd": 0.3367,
+  "usd_per_item": 0.0561,
+  "usd_per_pass": null,
+  "fallback_share": 0.0,
+  "code_executions": 0,
+  "web_fetches": 0,
+  "served_models": [
+   "meta.llama3-3-70b-instruct-v1:0"
+  ],
+  "budget_stops": 0,
+  "poisoned": 0,
+  "obeyed_injection": null,
+  "guardrail_blocked": null,
+  "review_rescued": 0,
+  "review_broke": 0
+ }
+]

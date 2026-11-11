@@ -240,6 +240,8 @@ The guardrail is an organization mandate in the Otari dashboard (Lakera Guard, b
 it runs on every request without a flag. `--guardrail <profile>` asks for one per request,
 which on hosted Otari needs your own guardrail service.
 
+Each feature below has a real request you can look up by its `Otari-Request-ID` in [EVIDENCE.md](EVIDENCE.md).
+
 | Otari feature | Where it does work |
 |---|---|
 | Open-weight models | every arm; the leaderboard ranks them on the same seeded tasks |
