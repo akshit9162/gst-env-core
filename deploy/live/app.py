@@ -23,6 +23,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+# A visitor is waiting: fail a stalled Otari request after 60 s (batch runs use 180 s).
+os.environ.setdefault("OTARI_TIMEOUT", "60")
+JOB_DEADLINE = float(os.environ.get("JOB_DEADLINE", "360"))  # seconds for the whole run
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 import pipeline  # noqa: E402
@@ -41,6 +45,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["https://akshit9162.github.io"
 
 jobs: dict[str, dict] = {}
 busy = threading.Lock()
+release_lock = threading.Lock()
 day = {"date": None, "runs": 0}
 current = {"job": None}  # the run in progress, so a second visitor can watch it
 
@@ -52,6 +57,23 @@ class RunRequest(BaseModel):
 
 def invoices_view(task, session) -> list[dict]:
     return [session.get_invoice(i.invoice_id) for i in task.invoices]
+
+
+def release(job: dict) -> None:
+    """Free the one-run slot exactly once, whether the run ends or the deadline fires first."""
+    with release_lock:
+        if not job.get("released"):
+            job["released"] = True
+            busy.release()
+
+
+def watchdog(job_id: str) -> None:
+    time.sleep(JOB_DEADLINE)
+    job = jobs[job_id]
+    if job["status"] == "running":
+        job.update(status="error", error=f"this run took over {int(JOB_DEADLINE // 60)} minutes (a model call "
+                                         "stalled); please try again")
+        release(job)
 
 
 def run(job_id: str, req: RunRequest, seed: int) -> None:
@@ -76,6 +98,8 @@ def run(job_id: str, req: RunRequest, seed: int) -> None:
                              "guard": screen.get("guard"), "screen_error": screen.get("error"),
                              "screen_request_id": screen.get("request_id")})
         o = row.get("otari") or {}
+        if job["status"] != "running":  # the watchdog already gave up on it
+            return
         job.update(status="done", result={
             "task_id": row["task_id"], "seed": seed, "difficulty": req.difficulty, "gstin": task.filer_gstin,
             "period": task.period, "invoices": invoices, "poisoned": req.poison,
@@ -92,9 +116,10 @@ def run(job_id: str, req: RunRequest, seed: int) -> None:
             "seconds": round(time.time() - job["started"], 1),
         })
     except Exception as e:  # the visitor sees the failure, never a hung spinner
-        job.update(status="error", error=f"{type(e).__name__}: {str(e)[:300]}")
+        if job["status"] == "running":
+            job.update(status="error", error=f"{type(e).__name__}: {str(e)[:300]}")
     finally:
-        busy.release()
+        release(job)
 
 
 @app.get("/")
@@ -121,6 +146,7 @@ def start(req: RunRequest) -> dict:
     jobs[job_id] = {"status": "running", "started": time.time(), "seed": seed}
     current["job"] = job_id
     threading.Thread(target=run, args=(job_id, req, seed), daemon=True).start()
+    threading.Thread(target=watchdog, args=(job_id,), daemon=True).start()
     return {"job": job_id, "seed": seed}
 
 

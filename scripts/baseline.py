@@ -445,7 +445,7 @@ class OtariAgent:
                  guardrails: list[str] | None = None, code_exec: bool = False, web_fetch: bool = False):
         self.client = openai.OpenAI(base_url=os.environ.get("OTARI_BASE_URL", OTARI_BASE_URL),
                                     api_key=os.environ.get("OTARI_API_KEY"),
-                                    timeout=180, max_retries=0)  # turn() retries; a hung stream must not hold a worker 10 min
+                                    timeout=float(os.environ.get("OTARI_TIMEOUT", "180")), max_retries=0)  # turn() retries; a hung stream must not hold a worker 10 min
         self.model = otari_model(model)
         self.tools = [
             {"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["input_schema"]}}
