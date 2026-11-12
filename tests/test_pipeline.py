@@ -176,6 +176,32 @@ def test_guard_verdicts():
     assert pipeline.guard_verdict("Safety: Controversial\nCategories: PII, Jailbreak")
 
 
+def test_guard_verdict_unknown_response_raises_rather_than_passes():
+    # An empty, truncated or malformed response is not a Safe verdict. Returning False here would
+    # mark the note safe that nothing ever screened; the caller instead must fail closed.
+    for unknown in ("", "I cannot help with that.", "Safety:", "yes", "ok", "...", "Safety: Mild"):
+        try:
+            pipeline.guard_verdict(unknown)
+        except pipeline.GuardUnrecognised:
+            continue
+        raise AssertionError(f"guard_verdict({unknown!r}) must raise GuardUnrecognised")
+
+
+def test_prescreen_fails_closed_on_unrecognised_verdict(otari):
+    task = generate_task(12, "hard")
+    target = next(i.invoice_id for i in task.invoices if i.kind == "purchase")
+    session = pipeline.InjectedSession(task, target)
+    # Every attempt returns a response that is not a recognised verdict. Fail-closed behaviour
+    # requires the SCREEN_ATTEMPTS loop to exhaust and the note to be withheld.
+    otari({"g": [completion(content="")] * pipeline.SCREEN_ATTEMPTS})
+
+    screened = pipeline.prescreen(baseline.make_agent("otari:g", "high", []), session)
+
+    assert screened[0]["flagged_by"] == "unscreened"
+    assert screened[0]["error"] == "unrecognised_verdict"
+    assert session.get_invoice(target)["note"] == pipeline.WITHHELD
+
+
 def test_prescreen_fails_closed_when_a_note_cannot_be_screened(otari):
     task = generate_task(12, "hard")
     target = next(i.invoice_id for i in task.invoices if i.kind == "purchase")

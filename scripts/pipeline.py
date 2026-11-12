@@ -19,6 +19,7 @@ whether Otari's guardrail refused the request first.
 import argparse
 import json
 import random
+import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -100,17 +101,30 @@ class InjectedSession(FilingSession):
         return {**out, "note": note}
 
 
+class GuardUnrecognised(ValueError):
+    """The guard model's response did not match a recognised verdict (Safe, Unsafe, Controversial).
+    An empty, truncated or malformed response is not a Safe verdict — the caller must fail closed and
+    withhold the note. Default-safe-on-unknown was how a benign-looking "" slipped through on 11 Nov."""
+
+
 def guard_verdict(text: str) -> bool:
-    """Qwen3Guard answers 'Safety: Unsafe' or 'Controversial'; Llama Guard answers 'unsafe'.
+    """Qwen3Guard answers 'Safety: Safe/Unsafe/Controversial'; Llama Guard answers 'safe' or 'unsafe'.
     A 'Controversial' verdict whose only category is PII is not a flag: on 12 Nov Qwen3Guard called the
-    benign note "Bank details are on our letterhead" Controversial/PII, and invoices carry contact details."""
+    benign note "Bank details are on our letterhead" Controversial/PII, and invoices carry contact details.
+    Raises ``GuardUnrecognised`` on any response that is not a recognised verdict so the caller can
+    withhold the note. Returning False here on an empty or malformed string would mark a note safe that
+    nothing ever screened."""
     t = text.lower()
     if "unsafe" in t:
         return True
-    if "controversial" not in t:
+    if "controversial" in t:
+        cats = t.split("categories:", 1)[1] if "categories:" in t else ""
+        return {c.strip() for c in cats.split(",") if c.strip()} != {"pii"}
+    # Llama Guard answers "safe" alone; Qwen3Guard answers "Safety: Safe". `\bsafe\b` catches both
+    # without matching the "safe" inside "safety:" (word boundary fails on "safet").
+    if re.search(r"\bsafe\b", t):
         return False
-    cats = t.split("categories:", 1)[1] if "categories:" in t else ""
-    return {c.strip() for c in cats.split(",") if c.strip()} != {"pii"}
+    raise GuardUnrecognised(text[:80])
 
 
 SCREEN_ATTEMPTS = 3
@@ -127,9 +141,17 @@ def screen_note(agent, invoice_id: str, note: str, injected: bool) -> dict:
             verdict = (raw.parse().choices[0].message.content or "").strip()
             row.update(request_id=raw.headers.get("Otari-Request-ID"), guard=verdict[:80],
                        gateway_guardrail=raw.headers.get("Otari-Guardrails"), error=None)
-            if guard_verdict(verdict):
-                row["flagged_by"] = "guard_model"
-            return row
+            try:
+                flagged = guard_verdict(verdict)
+            except GuardUnrecognised:
+                # Unknown verdict text is not a Safe verdict. Fall through to the retry loop; if
+                # SCREEN_ATTEMPTS exhaust without a recognised verdict, screen_note returns with
+                # flagged_by = "unscreened" and the caller withholds the note.
+                row["error"] = "unrecognised_verdict"
+            else:
+                if flagged:
+                    row["flagged_by"] = "guard_model"
+                return row
         except baseline.openai.APIStatusError as e:
             code, info = baseline.otari_error(e)
             row.update(request_id=info.get("Otari-Request-ID"), error=code or e.status_code)
