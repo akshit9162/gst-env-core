@@ -27,7 +27,24 @@ through tools and files the return. A deterministic solver computes the correct 
 scores the outcome rather than the steps taken, so the same tasks work for tool-use, GUI and
 plain-text agents and for training as well as evaluation.
 
-## Baseline results
+## Status
+
+What has run and what has not, as of 2026-11-12. The evaluation protocol is frozen but the
+closed-source baselines below have not been funded yet.
+
+| Report | Status | Where |
+|---|---|---|
+| Open-weight leaderboard (Otari, 15 tasks/model, 5 models) | run, 2026-11-12 | [EVIDENCE.md](EVIDENCE.md), `results/LEADERBOARD.md`, `results/lb5-*.jsonl` |
+| Prompt-injection + pre-screen experiment | run, 2026-11-12 | [EVIDENCE.md](EVIDENCE.md) (9/10 poisoned notes withheld; the one that passed was caught by the reviewer agent) |
+| Seeded-defect qualification (18 defects) | 18/18 caught, no false alarm on clean control, 2026-11-04 | `evals/qualification/LEDGER.md` |
+| Closed-source baselines (Claude Opus / GPT / Sarvam-105B) | preregistered, not yet run | `evals/prereg-baseline-v1.md` |
+
+**Domain scope.** GSTR-3B is a simplified rendering of India's monthly GST return built from the
+CBIC rules — it is not a complete filing system and has not been reviewed by a practising CA.
+Reverse charge, blocked credit, interstate splits and Rule 88A set-off are modelled against the law
+as written; corner cases a CA would flag are the point of the `cycle` tier, not a claim of coverage.
+
+## Closed-source baselines (pending)
 
 | Model | Easy | Medium | Hard |
 |---|---|---|---|
@@ -37,6 +54,8 @@ plain-text agents and for training as well as evaluation.
 
 Pass rate = share of tasks where every graded field is correct, reported with a 95% Wilson interval.
 Reproduce with `scripts/baseline.py`; the run plan is preregistered in `evals/prereg-baseline-v1.md`.
+The open-weight leaderboard (DeepSeek, Qwen, GLM, GPT-OSS, Llama) has already run through Otari
+on the same seeded tasks — see [EVIDENCE.md](EVIDENCE.md).
 
 ## What an episode looks like
 

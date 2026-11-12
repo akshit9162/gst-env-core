@@ -46,7 +46,7 @@ The scorer must give low or zero reward to inputs that do no real work or skip a
   strategy must score under 0.02 with 0% pass; each shortcut must pass at most 65% of hard tasks.
   Enforced by `tests/test_reward_audit.py`.
 - 18 seeded defects in the solver, grader, tools and generator (`scripts/vaccinate.py`). The suite must
-  catch every one and pass a clean copy. Ledger: `evals/qualification/LEDGER.md` (18/18 on 2026-11-01).
+  catch every one and pass a clean copy. Ledger: `evals/qualification/LEDGER.md` (18/18 on 2026-11-04).
 
 A decoy that passes proves the scorer rewards something other than a correct return, and blocks the run.
 
